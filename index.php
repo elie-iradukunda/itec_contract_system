@@ -179,6 +179,19 @@ $router->get('/contracts/{id}/execution-status', [\Controllers\ContractControlle
 $router->get('/contracts/{id}/final-pdf', [\Controllers\ContractController::class, 'finalPDF']);
 $router->get('/contracts/{id}/audit-trail', [\Controllers\ContractController::class, 'auditTrailView']);
 
+
+
+$container->bind(\Controllers\ClientController::class, function($container) {
+    return new \Controllers\ClientController();
+});
+
+$container->bind(\Controllers\ContractController::class, function($container) {
+    return new \Controllers\ContractController(
+        $container->resolve(\Services\ContractService::class),
+        $container->resolve(\Services\AuditService::class)
+    );
+});
+
 // ============================================
 // OSCAR ROUTES (Back-end - API Endpoints)
 // ============================================
@@ -230,5 +243,10 @@ $router->get('/migrate/rollback', [\Controllers\MigrationController::class, 'rol
 // ============================================
 // Dispatch the request
 // ============================================
+$router->get('/seed', function() {
+    require_once __DIR__ . '/seed.php';
+    echo "<br><a href='/'>Back to Home</a>";
+});
+
 $method = $_SERVER['REQUEST_METHOD'];
 $router->dispatch($method, $requestUri);
