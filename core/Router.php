@@ -49,23 +49,48 @@ class Router
 
     public function dispatch($method, $uri)
     {
+        $uri = parse_url($uri, PHP_URL_PATH);
+
         // Check middleware groups first
         foreach ($this->middlewareGroups as $group) {
         }
 
-        if (isset($this->routes[$method][$uri])) {
-            $handler = $this->routes[$method][$uri];
-            
-            if (is_array($handler)) {
-                $controller = $this->container->resolve($handler[0]);
-                $methodName = $handler[1];
-                return call_user_func([$controller, $methodName]);
+        foreach ($this->routes[$method] ?? [] as $route => $handler) {
+            $params = $this->matchRoute($route, $uri);
+
+            if ($params !== false) {
+                return $this->runHandler($handler, $params);
             }
-            
-            return call_user_func($handler);
         }
         
         http_response_code(404);
         echo "404 - Page Not Found";
+    }
+
+    private function matchRoute($route, $uri)
+    {
+        // Match normal routes and routes with {id} style parameters.
+        if ($route === $uri) {
+            return [];
+        }
+
+        $pattern = preg_replace('#\\\\\{[^/]+\\\\\}#', '([^/]+)', preg_quote($route, '#'));
+
+        if (preg_match('#^' . $pattern . '$#', $uri, $matches)) {
+            return array_slice($matches, 1);
+        }
+
+        return false;
+    }
+
+    private function runHandler($handler, $params)
+    {
+        // Resolve controller handlers through the container.
+        if (is_array($handler)) {
+            $controller = $this->container->resolve($handler[0]);
+            return call_user_func_array([$controller, $handler[1]], $params);
+        }
+
+        return call_user_func_array($handler, $params);
     }
 }

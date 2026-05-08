@@ -1,0 +1,31 @@
+* { box-sizing: border-box; }
+body { margin: 0; color: #26384d; background: #f3f6fb; font-family: "Segoe UI", Arial, sans-serif; }
+.topbar { height: 85px; display: flex; align-items: center; justify-content: space-between; padding: 0 11.2%; color: #fff; background: linear-gradient(110deg, #117d71, #a0002b 45%, #22537c); }
+.brand { font-size: 24px; font-weight: 700; }
+.brand span { margin-left: 12px; font-size: 13px; font-weight: 500; color: #bcd5ff; }
+.profile { display: grid; grid-template-columns: 42px auto; column-gap: 10px; align-items: center; }
+.profile small { grid-column: 2; color: #8ec1ff; font-weight: 600; }
+.avatar { grid-row: 1 / span 2; width: 40px; height: 40px; border-radius: 50%; background: #d9e2ec; }
+.nav { height: 68px; display: flex; gap: 30px; align-items: center; padding: 0 11.2%; background: #fff; border-bottom: 1px solid #dce2ea; }
+.nav a { height: 100%; display: flex; align-items: center; color: #8a94a6; text-decoration: none; font-size: 16px; }
+.nav a.active { color: #3578f6; border-bottom: 1px solid #3578f6; }
+.page { max-width: 1470px; margin: 0 auto; padding: 38px 24px; }
+h1 { margin: 0 0 36px; font-size: 29px; font-weight: 500; }
+.cards { display: grid; grid-template-columns: repeat(3, minmax(190px, 1fr)); gap: 30px; margin-bottom: 30px; }
+.card { min-height: 84px; display: flex; align-items: center; gap: 16px; padding: 16px; color: #26384d; text-decoration: none; background: #fff; border: 1px solid #d8dee8; border-radius: 4px; box-shadow: 0 1px 2px rgba(25, 38, 60, .05); }
+.card span { width: 50px; height: 50px; display: grid; place-items: center; color: #fff; border-radius: 4px; font-weight: 700; }
+.card strong { display: block; font-size: 19px; font-weight: 600; }
+.card small { color: #8a94a6; font-size: 14px; }
+.blue span { background: #4a80d9; }
+.green span { background: #57bd00; }
+.red span { background: #d91e1e; }
+.panel { padding: 28px 30px; background: #fff; border: 1px solid #d8dee8; border-radius: 4px; box-shadow: 0 1px 2px rgba(25, 38, 60, .05); }
+.panel h2 { margin: 0 0 10px; font-size: 23px; font-weight: 500; }
+.panel p { margin: 0 0 22px; color: #657086; font-size: 16px; }
+.button { display: inline-flex; align-items: center; height: 44px; padding: 0 22px; color: #fff; background: #3578f6; border-radius: 4px; text-decoration: none; font-size: 15px; }
+@media (max-width: 760px) {
+    .topbar, .nav { padding-inline: 20px; }
+    .nav { gap: 18px; overflow-x: auto; }
+    .cards { grid-template-columns: 1fr; gap: 14px; }
+    .panel { padding: 22px; }
+}

@@ -1,23 +1,53 @@
+<?php $basePath = '/itec_contract_system'; ?>
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title><?php echo $title; ?></title>
-    <style>
-        body { font-family: Arial; margin: 50px; text-align: center; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px; }
-        .links { margin-top: 30px; }
-        .links a { display: inline-block; margin: 0 10px; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }
-        h1 { color: #333; }
-    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?= htmlspecialchars($title) ?></title>
+    <link rel="stylesheet" href="<?= $basePath ?>/public/assets/css/home.css">
 </head>
 <body>
-    <div class="container">
-        <h1>Welcome to <?php echo $title; ?></h1>
-        <p>Contract management system with digital signatures and audit trails.</p>
-        <div class="links">
-            <a href="/itec_contract_system/contracts">View Contracts</a>
-            <a href="/itec_contract_system/migrate">Run Migrations</a>
-        </div>
-    </div>
+    <!-- Contract system header -->
+    <header class="topbar">
+        <div class="brand">ITEC Contract System <span>portal</span></div>
+        <div class="profile"><span class="avatar"></span><strong>Staff Portal</strong><small>contract team</small></div>
+    </header>
+
+    <!-- Main navigation -->
+    <nav class="nav">
+        <a class="active" href="<?= $basePath ?>/">Home</a>
+        <a href="<?= $basePath ?>/contracts">Contracts</a>
+        <a href="<?= $basePath ?>/contracts/1/edit">Editor</a>
+        <a href="<?= $basePath ?>/migrate">Migrations</a>
+    </nav>
+
+    <!-- Dashboard welcome area -->
+    <main class="page">
+        <h1><?= htmlspecialchars($title) ?></h1>
+
+        <section class="cards">
+            <a class="card blue" href="<?= $basePath ?>/contracts">
+                <span>1</span>
+                <div><strong>Contracts</strong><small>View contract list</small></div>
+            </a>
+
+            <a class="card green" href="<?= $basePath ?>/contracts/1/edit">
+                <span>2</span>
+                <div><strong>Contract Editor</strong><small>Open contract #1</small></div>
+            </a>
+
+            <a class="card red" href="<?= $basePath ?>/migrate">
+                <span>3</span>
+                <div><strong>Migrations</strong><small>Update database tables</small></div>
+            </a>
+        </section>
+
+        <section class="panel">
+            <h2>Today: In-Browser Contract Editor</h2>
+            <p>Open a contract, edit its content in the browser, then save it to the server storage folder.</p>
+            <a class="button" href="<?= $basePath ?>/contracts/1/edit">Open Editor</a>
+        </section>
+    </main>
 </body>
 </html>
