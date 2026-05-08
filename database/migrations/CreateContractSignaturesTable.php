@@ -12,7 +12,7 @@ class CreateContractSignaturesTable extends Migration
                 contract_id INT NOT NULL,
                 signer_id INT NOT NULL,
                 signer_role ENUM('client', 'company_rep') NOT NULL,
-                signature_blob TEXT NOT NULL,
+                signature_file_path VARCHAR(500) NOT NULL,
                 public_key TEXT,
                 document_hash VARCHAR(255) NOT NULL,
                 ip_address VARCHAR(45),
