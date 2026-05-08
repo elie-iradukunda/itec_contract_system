@@ -25,6 +25,32 @@ class MigrationController extends Controller
         ");
         
         $migrationFiles = glob(__DIR__ . '/../database/migrations/*.php');
+        $migrationOrder = [
+            'CreateUsersTable' => 10,
+            'CreateClientsTable' => 20,
+            'CreateContractsTable' => 30,
+            'CreateContractSignaturesTable' => 40,
+            'CreateAuditLogsTable' => 50,
+            'CreateContractSealsTable' => 60,
+            'CreateContractVersionsTable' => 70,
+            'CreateDocumentHashesTable' => 80,
+            'CreateNotificationsTable' => 90,
+            'CreateUploadedDocumentsTable' => 100,
+        ];
+
+        usort($migrationFiles, function ($a, $b) use ($migrationOrder) {
+            $aName = basename($a, '.php');
+            $bName = basename($b, '.php');
+            $aOrder = $migrationOrder[$aName] ?? 999;
+            $bOrder = $migrationOrder[$bName] ?? 999;
+
+            if ($aOrder === $bOrder) {
+                return strcmp($aName, $bName);
+            }
+
+            return $aOrder <=> $bOrder;
+        });
+
         $executed = $this->db->query("SELECT migration FROM migrations")->fetchAll(\PDO::FETCH_COLUMN);
         
         echo "<pre>";
