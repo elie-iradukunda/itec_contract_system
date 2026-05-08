@@ -6,27 +6,30 @@ use Core\Controller;
 
 class ClientController extends Controller
 {
-    private $contractService;
-
-    public function __construct($contractService = null)
+    public function __construct()
     {
         parent::__construct();
-        $this->contractService = $contractService;
     }
 
-    public function index()
+    public function portal()
     {
-        $this->view('contracts/index', [
-            'title' => 'Contracts'
+        $this->view('clients/portal', [
+            'title' => 'Client Portal'
         ]);
     }
 
     public function show($id)
     {
-        $this->json([
-            'success' => true,
-            'contract_id' => $id,
-            'message' => 'Contract found'
+        $this->view('clients/show', [
+            'title' => 'Client Details',
+            'client_id' => $id
+        ]);
+    }
+
+    public function index()
+    {
+        $this->view('clients/index', [
+            'title' => 'All Clients'
         ]);
     }
 }
