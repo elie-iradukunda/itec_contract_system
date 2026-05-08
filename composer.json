@@ -5,7 +5,8 @@
             "Controllers\\": "controllers/",
             "Models\\": "models/",
             "Services\\": "services/",
-            "Middleware\\": "middleware/"
+            "Middleware\\": "middleware/",
+            "Database\\Seeders\\": "database/seeders/"
         }
     }
 }
