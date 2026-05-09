@@ -1,2 +1,3 @@
+
 *.sh
-test_oscar.php
+.envtest_oscar.php

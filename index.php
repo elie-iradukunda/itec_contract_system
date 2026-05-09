@@ -52,7 +52,8 @@ $container->bind(\Models\AuditLog::class, function($container) {
 // Register Services
 $container->bind(\Services\ContractService::class, function($container) {
     return new \Services\ContractService(
-        $container->resolve(\Models\Contract::class)
+        $container->resolve(\Models\Contract::class),
+        $container->resolve(\Models\ContractVersion::class)
     );
 });
 $container->bind(\Services\SignatureService::class, function($container) {
@@ -133,8 +134,9 @@ $router->get('/contracts/readonly/{id}', [\Controllers\ContractController::class
 $router->get('/contracts/review/{id}', [\Controllers\ContractController::class, 'review']);
 
 // Document Editor (Elie)
-$router->get('/contracts/{id}/edit', [\Controllers\ContractController::class, 'editor']);
+$router->get('/contracts/{id}/edit', [\Controllers\ContractController::class, 'edit']);
 $router->post('/contracts/{id}/save', [\Controllers\ContractController::class, 'saveDocument']);
+$router->get('/contracts/{id}/download', [\Controllers\ContractController::class, 'downloadDocument']);
 $router->get('/contracts/{id}/status', [\Controllers\ContractController::class, 'getStatus']);
 
 // Version Control (Elie)
