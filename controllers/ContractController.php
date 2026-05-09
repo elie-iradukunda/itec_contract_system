@@ -22,6 +22,12 @@ class ContractController extends Controller
             'title' => 'Contracts'
         ]);
     }
+        public function create()
+        {
+            $this->view('contracts/create', [
+                'title' => 'Create New Contract'
+            ]);
+        }
 
     public function show($id)
     {
