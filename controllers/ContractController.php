@@ -30,25 +30,7 @@ class ContractController extends Controller
         ]);
     }
 
-    // 
 
-
-    public function transition($id)
-{
-    session_start();
-    $userId = $_SESSION['user_id'] ?? null;
-    
-    $stateMachine = new \Services\OscarStateMachineService();
-    $currentState = $stateMachine->getCurrentState($id);
-    
-    if (!$currentState) {
-        $this->json(['success' => false, 'error' => 'Contract not found'], 404);
-        return;
-    }
-    
-    $result = $stateMachine->transition($id, $currentState, $userId);
-    $this->json($result);
-}
 
 public function getState($id)
 {
@@ -70,16 +52,26 @@ public function submitForSigning($id)
     $userId = $_SESSION['user_id'] ?? null;
     
     $stateMachine = new \Services\OscarStateMachineService();
+    $result = $stateMachine->submitForSigning($id, $userId);
+    
+    $this->json($result);
+}
+
+public function transition($id)
+{
+    session_start();
+    $userId = $_SESSION['user_id'] ?? null;
+    
+    $stateMachine = new \Services\OscarStateMachineService();
     $currentState = $stateMachine->getCurrentState($id);
     
-    if ($currentState !== 'DRAFT') {
-        $this->json(['success' => false, 'error' => 'Contract must be in DRAFT state to submit'], 400);
+    if (!$currentState) {
+        $this->json(['success' => false, 'error' => 'Contract not found'], 404);
         return;
     }
     
     $result = $stateMachine->transition($id, $currentState, $userId);
     $this->json($result);
 }
-
 
 }
