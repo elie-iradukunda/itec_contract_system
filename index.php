@@ -52,11 +52,9 @@ $container->bind(\Models\AuditLog::class, function($container) {
 // Register Services
 $container->bind(\Services\ContractService::class, function($container) {
     return new \Services\ContractService(
-        $container->resolve(\Models\Contract::class)
+        $container->resolve(\Models\Contract::class),
+        $container->resolve(\Models\ContractVersion::class)
     );
-});
-$container->bind(\Services\OnlyOfficeService::class, function($container) {
-    return new \Services\OnlyOfficeService();
 });
 $container->bind(\Services\SignatureService::class, function($container) {
     return new \Services\SignatureService(
@@ -76,8 +74,7 @@ $container->bind(\Controllers\HomeController::class, function($container) {
 $container->bind(\Controllers\ContractController::class, function($container) {
     return new \Controllers\ContractController(
         $container->resolve(\Services\ContractService::class),
-        $container->resolve(\Services\AuditService::class),
-        $container->resolve(\Services\OnlyOfficeService::class)
+        $container->resolve(\Services\AuditService::class)
     );
 });
 $container->bind(\Controllers\VersionController::class, function($container) {
@@ -141,8 +138,6 @@ $router->get('/contracts/{id}/edit', [\Controllers\ContractController::class, 'e
 $router->post('/contracts/{id}/save', [\Controllers\ContractController::class, 'saveDocument']);
 $router->get('/contracts/{id}/download', [\Controllers\ContractController::class, 'downloadDocument']);
 $router->get('/contracts/{id}/status', [\Controllers\ContractController::class, 'getStatus']);
-$router->post('/contracts/{id}/onlyoffice/callback', [\Controllers\ContractController::class, 'onlyOfficeCallback']);
-$router->post('/contracts/{id}/onlyoffice/force-save', [\Controllers\ContractController::class, 'forceOnlyOfficeSave']);
 
 // Version Control (Elie)
 $router->get('/contracts/{id}/versions', [\Controllers\VersionController::class, 'index']);
