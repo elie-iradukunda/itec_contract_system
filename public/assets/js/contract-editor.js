@@ -7,6 +7,32 @@
     const banner = document.getElementById('readOnlyBanner');
     const versionsList = document.getElementById('versionsList');
     const versionCount = document.getElementById('versionCount');
+    const panelTabs = document.querySelectorAll('[data-panel-tab]');
+    const panelSections = document.querySelectorAll('[data-panel-section]');
+    const changesList = document.getElementById('changesList');
+    const changeCount = document.getElementById('changeCount');
+    const signingModal = document.getElementById('signingModal');
+    const openSigningChoice = document.getElementById('openSigningChoice');
+    const closeSigningModal = document.getElementById('closeSigningModal');
+    const signingMessage = document.getElementById('signingMessage');
+    const signedCopyForm = document.getElementById('signedCopyForm');
+    const uploadMessage = document.getElementById('uploadMessage');
+    const bodyLockBanner = document.getElementById('bodyLockBanner');
+    const bodyLockMessage = document.getElementById('bodyLockMessage');
+    const lockPill = document.getElementById('lockPill');
+    const lockStatusText = document.getElementById('lockStatusText');
+    const signatureAction = document.getElementById('signatureAction');
+    const sealAction = document.getElementById('sealAction');
+    const signatureActionHint = document.getElementById('signatureActionHint');
+    const distributionForm = document.getElementById('distributionForm');
+    const recipientEmail = document.getElementById('recipientEmail');
+    const distributeButton = document.getElementById('distributeButton');
+    const distributionMessage = document.getElementById('distributionMessage');
+    const distributionStateText = document.getElementById('distributionStateText');
+    const distributionResult = document.getElementById('distributionResult');
+    const portalLink = document.getElementById('portalLink');
+    const expiryLabel = document.getElementById('expiryLabel');
+    const finalPdfPreview = document.getElementById('finalPdfPreview');
     let editorInstance = null;
     let currentState = config.signingState || 'DRAFT';
     let isSaving = false;
@@ -20,7 +46,7 @@
 
     function setLoading(loading) {
         isSaving = loading;
-        saveButton.disabled = loading || currentState !== 'DRAFT';
+        saveButton.disabled = loading || !isDraftState(currentState);
         saveButton.querySelector('.spinner').classList.toggle('hidden', !loading);
         saveButton.querySelector('.buttonText').textContent = loading ? 'Saving...' : 'Save Contract';
     }
@@ -34,40 +60,94 @@
     }
 
     function applySigningState(state) {
+        const previousState = currentState;
         currentState = (state || 'DRAFT').toUpperCase();
-        const isDraft = currentState === 'DRAFT';
+        const isDraft = isDraftState(currentState);
         badge.textContent = currentState;
         badge.className = 'badge ' + currentState.toLowerCase();
         banner.classList.toggle('hidden', isDraft);
+        bodyLockBanner?.classList.toggle('hidden', isDraft);
         saveButton.disabled = !isDraft || isSaving;
         setEditorReadOnly(!isDraft);
+        renderBodyLockState();
         renderRestoreLocks();
+        renderChangeLocks();
+        renderDistributionState();
+
+        if (previousState !== currentState && previousState) {
+            setMessage(isDraft ? 'Contract returned to draft editing' : 'Signing state changed. Body editing is locked.', isDraft ? 'success' : 'error');
+        }
     }
 
     function getEditorData() {
         return editorInstance ? editorInstance.getContent() : editorElement.value.trim();
     }
 
-    function formatSavedAt(value) {
+    const sharedUi = window.ContractUi || {};
+    const formatSavedAt = function (value) {
         if (!value) return 'Saved just now';
-        const normalized = value.replace(' ', 'T');
-        const date = new Date(normalized);
-
-        return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-    }
-
-    function escapeHtml(value) {
-        return String(value).replace(/[&<>"']/g, (char) => ({
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#039;'
-        }[char]));
-    }
+        return typeof sharedUi.formatDate === 'function' ? sharedUi.formatDate(value) : value;
+    };
+    const escapeHtml = typeof sharedUi.escapeHtml === 'function'
+        ? sharedUi.escapeHtml
+        : function (value) {
+            return String(value).replace(/[&<>"']/g, (char) => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            }[char]));
+        };
 
     function versionUrl(template, versionNo) {
         return template.replace('__VERSION__', encodeURIComponent(versionNo));
+    }
+
+    function changeUrl(template, changeId) {
+        return template.replace('__CHANGE__', encodeURIComponent(changeId));
+    }
+
+    const responseJson = typeof sharedUi.responseJson === 'function'
+        ? sharedUi.responseJson
+        : async function (response) {
+            const text = await response.text();
+            try {
+                return text ? JSON.parse(text) : {};
+            } catch (error) {
+                return { success: response.ok, message: text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() };
+            }
+        };
+
+    // Poll-driven lock and distribution state keeps the frontend aligned with signing progress.
+    function isDraftState(state) {
+        return (state || '').toUpperCase() === 'DRAFT';
+    }
+
+    function isFinalSigningState(state) {
+        return ['FULLY_SIGNED', 'FULLY_EXECUTED', 'EXECUTED', 'COMPLETED'].includes((state || '').toUpperCase());
+    }
+
+    function portalLinkFromResult(result) {
+        const source = result.data || result.distribution || result;
+        const directUrl = source.portal_url || source.read_only_url || source.access_url || source.url || source.link;
+        const token = source.token || source.access_token || source.distribution_token;
+
+        if (directUrl) return directUrl;
+        if (token && config.accessUrlTemplate) {
+            return config.accessUrlTemplate.replace('__TOKEN__', encodeURIComponent(token));
+        }
+
+        return '';
+    }
+
+    function activatePanel(name) {
+        panelTabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.panelTab === name));
+        panelSections.forEach((section) => section.classList.toggle('active', section.dataset.panelSection === name));
+        if (['versions', 'changes', 'signing', 'distribution'].includes(name)) {
+            history.replaceState(null, '', '#' + name);
+        }
+        if (name === 'changes') loadChanges();
     }
 
     function renderVersions(versions) {
@@ -100,10 +180,66 @@
 
     function renderRestoreLocks() {
         if (!versionsList) return;
-        const locked = currentState !== 'DRAFT';
+        const locked = !isDraftState(currentState);
         versionsList.querySelectorAll('[data-restore-version]').forEach((button) => {
             button.disabled = locked;
         });
+    }
+
+    function renderChangeLocks() {
+        if (!changesList) return;
+        const locked = !isDraftState(currentState);
+        changesList.querySelectorAll('[data-change-action]').forEach((button) => {
+            button.disabled = locked || button.dataset.changePending !== '1';
+        });
+    }
+
+    function renderBodyLockState() {
+        const isDraft = isDraftState(currentState);
+        const isFinal = isFinalSigningState(currentState);
+        const text = isDraft
+            ? 'Body editing is open until signing starts.'
+            : isFinal
+                ? 'This contract is fully executed. Body content is locked and ready for distribution.'
+                : 'Body content is locked. Only the next signature or seal action should continue.';
+
+        if (bodyLockMessage) bodyLockMessage.textContent = text;
+        if (lockStatusText) lockStatusText.textContent = text;
+
+        if (lockPill) {
+            lockPill.textContent = isDraft ? 'Draft editable' : isFinal ? 'Fully executed' : 'Body locked';
+            lockPill.className = 'lock-pill ' + (isDraft ? 'draft' : isFinal ? 'final' : 'locked');
+        }
+
+        [signatureAction, sealAction].forEach((link) => {
+            if (!link) return;
+            link.classList.toggle('disabled', isDraft || isFinal);
+            link.setAttribute('aria-disabled', isDraft || isFinal ? 'true' : 'false');
+        });
+
+        if (signatureActionHint) {
+            signatureActionHint.textContent = isDraft
+                ? 'Signature and seal blocks activate after the backend records the first signing state change.'
+                : isFinal
+                    ? 'Execution is complete. Use Distribution to send the final PDF and read-only portal link.'
+                    : 'Body editing is locked. Continue with the next required signature or seal.';
+        }
+    }
+
+    function renderDistributionState() {
+        const isFinal = isFinalSigningState(currentState);
+        if (distributionStateText) distributionStateText.textContent = isFinal ? 'Ready to send' : 'Available after full execution';
+        if (distributeButton) distributeButton.disabled = !isFinal;
+        if (recipientEmail) recipientEmail.disabled = !isFinal;
+        if (finalPdfPreview) {
+            finalPdfPreview.classList.toggle('disabled', !isFinal);
+            finalPdfPreview.setAttribute('aria-disabled', isFinal ? 'false' : 'true');
+        }
+        if (distributionMessage && !isFinal) {
+            distributionMessage.textContent = 'Distribution unlocks when the backend reports FULLY_SIGNED.';
+            distributionMessage.className = '';
+        }
+        if (!isFinal) distributionResult?.classList.add('hidden');
     }
 
     async function loadVersions() {
@@ -116,6 +252,78 @@
             renderVersions(result.versions);
         } catch (error) {
             versionsList.innerHTML = '<p class="muted">History unavailable.</p>';
+        }
+    }
+
+    function renderChanges(changes) {
+        const items = Array.isArray(changes) ? changes : [];
+        const pending = items.filter((item) => (item.status || 'pending').toLowerCase() === 'pending');
+        changeCount.textContent = pending.length + (pending.length === 1 ? ' pending' : ' pending');
+
+        if (!items.length) {
+            changesList.innerHTML = '<p class="muted">No tracked edits yet.</p>';
+            return;
+        }
+
+        changesList.innerHTML = items.map((item) => {
+            const id = item.id || item.change_id;
+            const author = item.author || item.author_name || item.user_name || item.saved_by_name || 'Unknown user';
+            const time = item.timestamp || item.created_at || item.saved_at || item.updated_at;
+            const oldText = item.old_text || item.original_text || item.before_text || '';
+            const newText = item.new_text || item.updated_text || item.after_text || '';
+            const status = (item.status || 'pending').toLowerCase();
+            const isPending = status === 'pending' && Boolean(id);
+            const disabled = !isPending || !isDraftState(currentState) ? ' disabled' : '';
+            const pendingValue = isPending ? '1' : '0';
+
+            return [
+                '<article class="change-item">',
+                '<div class="change-meta"><strong>' + escapeHtml(author) + '</strong><span>' + escapeHtml(formatSavedAt(time)) + '</span></div>',
+                '<div class="change-diff">',
+                '<div class="diff-box diff-old"><del>' + escapeHtml(oldText || 'Original text unavailable') + '</del></div>',
+                '<div class="diff-box diff-new"><ins>' + escapeHtml(newText || 'Updated text unavailable') + '</ins></div>',
+                '</div>',
+                '<div class="change-actions">',
+                '<button class="accept-change" type="button" data-change-action="accept" data-change-pending="' + pendingValue + '" data-change-id="' + escapeHtml(id || '') + '"' + disabled + '>Accept</button>',
+                '<button class="reject-change" type="button" data-change-action="reject" data-change-pending="' + pendingValue + '" data-change-id="' + escapeHtml(id || '') + '"' + disabled + '>Reject</button>',
+                '</div>',
+                '</article>'
+            ].join('');
+        }).join('');
+
+        renderChangeLocks();
+    }
+
+    async function loadChanges() {
+        if (!config.changesUrl || !changesList) return;
+
+        try {
+            const response = await fetch(config.changesUrl, { headers: { Accept: 'application/json' } });
+            const result = await responseJson(response);
+            if (!response.ok || result.success === false) throw new Error(result.message || 'Tracked changes are not available yet');
+            renderChanges(result.changes || result.tracked_changes || result.data || []);
+        } catch (error) {
+            changeCount.textContent = '0 pending';
+            changesList.innerHTML = '<p class="muted">No tracked edits to review yet.</p>';
+        }
+    }
+
+    async function reviewChange(changeId, action) {
+        const template = action === 'accept' ? config.acceptChangeUrlTemplate : config.rejectChangeUrlTemplate;
+        if (!template || !changeId) return;
+        if (!isDraftState(currentState)) {
+            setMessage('Body content is locked. Tracked changes can no longer be accepted or rejected.', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch(changeUrl(template, changeId), { method: 'POST', headers: { Accept: 'application/json' } });
+            const result = await responseJson(response);
+            if (!response.ok || result.success === false) throw new Error(result.message || 'Review service is not connected yet');
+            setMessage('Tracked change ' + action + 'ed successfully', 'success');
+            loadChanges();
+        } catch (error) {
+            setMessage(error.message || 'Review service is not connected yet', 'error');
         }
     }
 
@@ -142,7 +350,7 @@
     }
 
     async function restoreVersion(versionNo) {
-        if (!versionNo || currentState !== 'DRAFT') return;
+        if (!versionNo || !isDraftState(currentState)) return;
         setMessage('Restoring version...', '');
 
         try {
@@ -153,6 +361,115 @@
             window.location.reload();
         } catch (error) {
             setMessage(error.message || 'Unable to restore version', 'error');
+        }
+    }
+
+    function setModalOpen(open) {
+        if (!signingModal) return;
+        signingModal.classList.toggle('hidden', !open);
+    }
+
+    async function submitSigningChoice(choice) {
+        if (!config.signingChoiceUrl) return;
+        signingMessage.textContent = 'Submitting signing choice...';
+
+        try {
+            const body = new FormData();
+            body.append('choice', choice);
+            body.append('signing_choice', choice);
+
+            const response = await fetch(config.signingChoiceUrl, { method: 'POST', body, headers: { Accept: 'application/json' } });
+            const result = await responseJson(response);
+            if (!response.ok || result.success === false) throw new Error(result.message || 'Signing service is not connected yet');
+
+            signingMessage.textContent = choice === 'digital' ? 'Digital signing selected.' : 'Hard copy selected.';
+        } catch (error) {
+            signingMessage.textContent = error.message || 'Signing service is not connected yet.';
+        }
+
+        if (choice === 'hard_copy' && config.printPdfUrl) {
+            window.open(config.printPdfUrl, '_blank', 'noopener');
+        }
+    }
+
+    async function uploadSignedCopy(event) {
+        event.preventDefault();
+        if (!config.uploadSignedUrl) return;
+
+        const fileInput = document.getElementById('signedCopyFile');
+        if (!fileInput || !fileInput.files.length) {
+            uploadMessage.textContent = 'Choose the returned signed scan first.';
+            uploadMessage.className = 'error';
+            return;
+        }
+
+        uploadMessage.textContent = 'Uploading signed scan...';
+        uploadMessage.className = '';
+
+        try {
+            const body = new FormData(signedCopyForm);
+            const response = await fetch(config.uploadSignedUrl, { method: 'POST', body, headers: { Accept: 'application/json' } });
+            const result = await responseJson(response);
+            if (!response.ok || result.success === false) throw new Error(result.message || 'Upload service is not connected yet');
+            uploadMessage.textContent = result.message || 'Signed scan uploaded successfully.';
+            uploadMessage.className = 'success';
+        } catch (error) {
+            uploadMessage.textContent = error.message || 'Upload service is not connected yet.';
+            uploadMessage.className = 'error';
+        }
+    }
+
+    async function distributeContract(event) {
+        event.preventDefault();
+
+        if (!isFinalSigningState(currentState)) {
+            distributionMessage.textContent = 'Distribution unlocks after the contract is fully signed.';
+            distributionMessage.className = 'error';
+            return;
+        }
+
+        if (!config.distributeUrl || !distributionForm) {
+            distributionMessage.textContent = 'Distribution service is not connected yet.';
+            distributionMessage.className = 'error';
+            return;
+        }
+
+        if (!recipientEmail.value.trim()) {
+            distributionMessage.textContent = 'Enter the client email before sending.';
+            distributionMessage.className = 'error';
+            recipientEmail.focus();
+            return;
+        }
+
+        distributeButton.disabled = true;
+        distributionMessage.textContent = 'Sending final PDF and creating the read-only portal link...';
+        distributionMessage.className = '';
+
+        try {
+            const body = new FormData(distributionForm);
+            const response = await fetch(config.distributeUrl, { method: 'POST', body, headers: { Accept: 'application/json' } });
+            const result = await responseJson(response);
+            if (!response.ok || result.success === false) throw new Error(result.message || 'Distribution service is not connected yet');
+
+            const link = portalLinkFromResult(result);
+            distributionMessage.textContent = result.message || 'Final PDF sent and secure portal link created.';
+            distributionMessage.className = 'success';
+
+            if (link && portalLink) {
+                portalLink.href = link;
+                portalLink.textContent = link;
+                distributionResult?.classList.remove('hidden');
+            }
+
+            if (expiryLabel) {
+                const source = result.data || result.distribution || result;
+                expiryLabel.textContent = source.expires_at ? 'Expires ' + formatSavedAt(source.expires_at) : 'Expires in 30 days';
+            }
+        } catch (error) {
+            distributionMessage.textContent = error.message || 'Distribution service is not connected yet.';
+            distributionMessage.className = 'error';
+        } finally {
+            renderDistributionState();
         }
     }
 
@@ -181,13 +498,13 @@
             min_height: 620,
             menubar: 'file edit view insert format tools table help',
             menu: {
-                file: { title: 'File', items: 'restoredraft | save preview | export print' },
+                file: { title: 'File', items: 'restoredraft | save preview fullscreen' },
                 edit: { title: 'Edit', items: 'undo redo | cut copy paste pastetext | selectall | searchreplace' },
                 view: { title: 'View', items: 'visualaid visualchars visualblocks | preview fullscreen | code wordcount' },
                 insert: { title: 'Insert', items: 'image media link anchor codesample inserttable | charmap emoticons insertdatetime pagebreak nonbreaking hr' },
                 format: { title: 'Format', items: 'bold italic underline strikethrough superscript subscript | blocks fontfamily fontsize align lineheight | forecolor backcolor | removeformat' },
-                tools: { title: 'Tools', items: 'spellchecker spellcheckerlanguage | code wordcount' },
-                table: { title: 'Table', items: 'inserttable | cell row column | advtablesort | tableprops deletetable' },
+                tools: { title: 'Tools', items: 'code wordcount' },
+                table: { title: 'Table', items: 'inserttable | cell row column | tableprops deletetable' },
                 help: { title: 'Help', items: 'help' }
             },
             plugins: 'accordion advlist anchor autolink autoresize autosave charmap code codesample directionality emoticons fullscreen help image importcss insertdatetime link lists media nonbreaking pagebreak preview quickbars save searchreplace table visualblocks visualchars wordcount',
@@ -198,7 +515,7 @@
             ].join(' '),
             toolbar_mode: 'wrap',
             toolbar_sticky: true,
-            contextmenu: 'link image table spellchecker',
+            contextmenu: 'link image table',
             quickbars_insert_toolbar: 'quickimage quicktable media codesample',
             quickbars_selection_toolbar: 'bold italic underline | forecolor backcolor | quicklink h2 h3 blockquote',
             block_formats: 'Normal=p; No Spacing=div; Title=h1; Subtitle=h2; Heading 1=h1; Heading 2=h2; Heading 3=h3; Quote=blockquote; Code=pre',
@@ -270,8 +587,51 @@
     applySigningState(currentState);
     startEditor();
     loadVersions();
+    loadChanges();
     saveButton.addEventListener('click', saveContract);
     window.addEventListener('resize', resizeEditor);
+    panelTabs.forEach((tab) => tab.addEventListener('click', () => activatePanel(tab.dataset.panelTab)));
+    const initialHash = window.location.hash.replace('#', '');
+    if (['changes', 'signing', 'distribution'].includes(initialHash)) {
+        activatePanel(initialHash);
+    } else if (initialHash === 'signing-choice') {
+        activatePanel('signing');
+        setModalOpen(true);
+    }
+    document.querySelectorAll('[data-collapse-target]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const target = document.getElementById(button.dataset.collapseTarget);
+            const collapsed = target.classList.toggle('collapsed');
+            button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        });
+    });
+    changesList?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-change-action]');
+        if (button) {
+            if (!isDraftState(currentState)) {
+                setMessage('Body content is locked. Reviewer changes are frozen during signing.', 'error');
+                return;
+            }
+            reviewChange(button.dataset.changeId, button.dataset.changeAction);
+        }
+    });
+    openSigningChoice?.addEventListener('click', () => setModalOpen(true));
+    closeSigningModal?.addEventListener('click', () => setModalOpen(false));
+    [signatureAction, sealAction, finalPdfPreview].forEach((link) => {
+        link?.addEventListener('click', (event) => {
+            if (link.getAttribute('aria-disabled') === 'true') {
+                event.preventDefault();
+                setMessage('That action is locked until the contract reaches the correct signing state.', 'error');
+            }
+        });
+    });
+    signingModal?.addEventListener('click', (event) => {
+        if (event.target === signingModal) setModalOpen(false);
+        const choiceButton = event.target.closest('[data-signing-choice]');
+        if (choiceButton) submitSigningChoice(choiceButton.dataset.signingChoice);
+    });
+    signedCopyForm?.addEventListener('submit', uploadSignedCopy);
+    distributionForm?.addEventListener('submit', distributeContract);
     versionsList?.addEventListener('click', (event) => {
         const button = event.target.closest('[data-restore-version]');
         if (button) restoreVersion(button.dataset.restoreVersion);

@@ -34,7 +34,12 @@ class MigrationController extends Controller
             'CreateContractSealsTable' => 60,
             'CreateContractVersionsTable' => 70,
             'CreateDocVersionsTable' => 75,
-            'CreateDocumentHashesTable' => 80,
+            'CreateDocTrackedChangesTable' => 76,
+            'CreateDocSignaturesTable' => 77,
+            'CreateDocSigningOrderTable' => 78,
+            'CreateDocSignatureAuditTable' => 79,
+            'CreateDocDistributionsTable' => 80,
+            'CreateDocumentHashesTable' => 85,
             'CreateNotificationsTable' => 90,
             'CreateUploadedDocumentsTable' => 100,
         ];
