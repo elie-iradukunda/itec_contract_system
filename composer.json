@@ -12,6 +12,9 @@
     "require": {
         "phpmailer/phpmailer": "^7.0",
         "tecnickcom/tcpdf": "^6.11",
-        "robinvdvleuten/ulid": "^5.0"
+        "robinvdvleuten/ulid": "^5.0",
+        "phpoffice/phpword": "^1.1",
+        "dompdf/dompdf": "^3.1",
+        "setasign/fpdi": "^2.6"
     }
 }
