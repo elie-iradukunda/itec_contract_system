@@ -1,46 +1,33 @@
 <?php
-$basePath = $basePath ?? '/itec_contract_system';
-$assetVersion = $assetVersion ?? time();
-$pageTitle = $pageTitle ?? 'Secure Access';
-$pageHeading = $pageHeading ?? $pageTitle;
-$pageEyebrow = $pageEyebrow ?? 'account access';
-$pageLead = $pageLead ?? '';
-$pageContent = $pageContent ?? '';
-$pageClass = $pageClass ?? 'guest-page';
-$pageScripts = $pageScripts ?? [];
-$headerMeta = $headerMeta ?? 'secure access';
-$profileLabel = $profileLabel ?? 'Client Access';
-$profileSubLabel = $profileSubLabel ?? 'protected workspace';
+if (!defined('BASE_URL')) {
+    require_once dirname(__DIR__, 2) . '/config/constants.php';
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($pageTitle) ?></title>
-    <link rel="stylesheet" href="<?= $basePath ?>/public/assets/css/home.css?v=<?= $assetVersion ?>">
+    <title><?= $title ?? 'Contract Document' ?></title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    
+    <style>
+        body { background-color: #f8f9fa; }
+        .readonly-container { max-width: 1000px; margin: 2rem auto; background: white; border-radius: 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden; }
+        .document-header { background: #f8f9fa; padding: 1.5rem; border-bottom: 1px solid #dee2e6; }
+        .document-body { padding: 2rem; min-height: 500px; }
+        footer { text-align: center; padding: 1rem; color: #6c757d; border-top: 1px solid #dee2e6; }
+    </style>
 </head>
 <body>
-    <?php require __DIR__ . '/header.php'; ?>
 
-    <main class="page guest-shell <?= htmlspecialchars($pageClass) ?>">
-        <section class="auth-layout">
-            <div class="auth-copy surface">
-                <p class="kicker"><?= htmlspecialchars($pageEyebrow) ?></p>
-                <h1><?= htmlspecialchars($pageHeading) ?></h1>
-                <?php if ($pageLead !== ''): ?>
-                    <div class="page-lead"><?= $pageLead ?></div>
-                <?php endif; ?>
-                <div class="auth-points">
-                    <article><strong>Version control</strong><span>Every save becomes a recoverable document version.</span></article>
-                    <article><strong>Execution workflow</strong><span>Client choice, body lock, company seal, final PDF.</span></article>
-                    <article><strong>Audit trail</strong><span>Every action is tied to time, signer, and document state.</span></article>
-                </div>
-            </div>
-            <div class="auth-card surface">
-                <?= $pageContent ?>
-            </div>
-        </section>
-    </main>
+<div class="readonly-container">
+    <?= $content ?? '' ?>
+</div>
 
-    <?php require __DIR__ . '/footer.php'; ?>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
