@@ -7,36 +7,50 @@ use Core\Database;
 class OscarAuditService
 {
     private $db;
-
+    
     public function __construct()
     {
         $this->db = Database::getInstance()->getConnection();
     }
-
-    public function logEvent($contractId, $userId, $action, $eventType, $details = [])
+    
+    public function logEvent($contractId, $signerId, $eventType, $docHash = null)
     {
         $ip = $_SERVER['REMOTE_ADDR'] ?? null;
         $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
         
-        $sql = "INSERT INTO audit_logs (contract_id, user_id, action, event_type, ip_address, user_agent, details) 
-                VALUES (:contract_id, :user_id, :action, :event_type, :ip_address, :user_agent, :details)";
+        $query = "INSERT INTO doc_signature_audit 
+                  (contract_id, signer_id, event_type, doc_hash, ip_address, user_agent, timestamp) 
+                  VALUES (:contract_id, :signer_id, :event_type, :doc_hash, :ip, :ua, NOW())";
         
-        $stmt = $this->db->prepare($sql);
+        $stmt = $this->db->prepare($query);
         return $stmt->execute([
             'contract_id' => $contractId,
-            'user_id' => $userId,
-            'action' => $action,
+            'signer_id' => $signerId,
             'event_type' => $eventType,
-            'ip_address' => $ip,
-            'user_agent' => $userAgent,
-            'details' => json_encode($details)
+            'doc_hash' => $docHash,
+            'ip' => $ip,
+            'ua' => $userAgent
         ]);
     }
-
+    
     public function getAuditTrail($contractId)
     {
-        $sql = "SELECT * FROM audit_logs WHERE contract_id = :contract_id ORDER BY created_at DESC";
-        $stmt = $this->db->prepare($sql);
+        $query = "SELECT * FROM doc_signature_audit 
+                  WHERE contract_id = :contract_id 
+                  ORDER BY timestamp ASC";
+        $stmt = $this->db->prepare($query);
+        $stmt->execute(['contract_id' => $contractId]);
+        return $stmt->fetchAll();
+    }
+    
+    public function getFullChain($contractId)
+    {
+        $query = "SELECT a.*, s.doc_hash as signed_hash, s.snapshot_file_path
+                  FROM doc_signature_audit a
+                  LEFT JOIN doc_signatures s ON a.contract_id = s.contract_id AND a.signer_id = s.signer_id
+                  WHERE a.contract_id = :contract_id
+                  ORDER BY a.timestamp ASC";
+        $stmt = $this->db->prepare($query);
         $stmt->execute(['contract_id' => $contractId]);
         return $stmt->fetchAll();
     }
