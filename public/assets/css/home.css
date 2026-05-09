@@ -1,12 +1,14 @@
 * { box-sizing: border-box; }
 body { margin: 0; color: #26384d; background: #f3f6fb; font-family: "Segoe UI", Arial, sans-serif; }
-.topbar { height: 85px; display: flex; align-items: center; justify-content: space-between; padding: 0 11.2%; color: #fff; background: linear-gradient(110deg, #117d71, #a0002b 45%, #22537c); }
-.brand { font-size: 24px; font-weight: 700; }
-.brand span { margin-left: 12px; font-size: 13px; font-weight: 500; color: #bcd5ff; }
+.topbar { height: 72px; display: flex; align-items: center; justify-content: space-between; padding: 0 11%; color: #fff; background: linear-gradient(110deg, #117d71, #a0002b 45%, #22537c); }
+.brand { display: flex; gap: 14px; align-items: center; min-width: 0; }
+.topbar .brand-logo-frame { width: 178px; height: 58px; display: block; position: relative; flex: 0 0 auto; overflow: hidden; }
+.topbar .brand-logo { width: 178px; height: 178px; max-width: none; max-height: none; display: block; position: absolute; left: 0; top: -47px; object-fit: contain; }
+.brand  > span:not(.brand-logo-frame) { font-size: 13px; font-weight: 500; color: #bcd5ff; white-space: nowrap; }
 .profile { display: grid; grid-template-columns: 42px auto; column-gap: 10px; align-items: center; }
 .profile small { grid-column: 2; color: #8ec1ff; font-weight: 600; }
 .avatar { grid-row: 1 / span 2; width: 40px; height: 40px; border-radius: 50%; background: #d9e2ec; }
-.nav { height: 68px; display: flex; gap: 30px; align-items: center; padding: 0 11.2%; background: #fff; border-bottom: 1px solid #dce2ea; }
+.nav { height: 54px; display: flex; gap: 30px; align-items: center; padding: 0 11%; background: #fff; border-bottom: 1px solid #dce2ea; }
 .nav a { height: 100%; display: flex; align-items: center; color: #8a94a6; text-decoration: none; font-size: 16px; }
 .nav a.active { color: #3578f6; border-bottom: 1px solid #3578f6; }
 .page { max-width: 1470px; margin: 0 auto; padding: 38px 24px; }

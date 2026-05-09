@@ -1,8 +1,10 @@
 * { box-sizing: border-box; }
 body { margin: 0; color: #26384d; background: #f3f6fb; font-family: "Segoe UI", Arial, sans-serif; }
 .topbar { height: 72px; display: flex; justify-content: space-between; align-items: center; padding: 0 11%; color: #fff; background: linear-gradient(110deg, #117d71, #a0002b 45%, #22537c); }
-.brand { font-size: 24px; font-weight: 700; }
-.brand span { margin-left: 12px; color: #bdd5ff; font-size: 13px; font-weight: 500; }
+.brand { display: flex; gap: 14px; align-items: center; min-width: 0; }
+.brand-logo-frame { width: 178px; height: 58px; display: block; position: relative; flex: 0 0 auto; overflow: hidden; }
+.brand-logo { width: 178px; height: 178px; display: block; position: absolute; left: 0; top: -47px; object-fit: contain; }
+.brand > span:not(.brand-logo-frame) { color: #bdd5ff; font-size: 13px; font-weight: 500; white-space: nowrap; }
 .profile { display: grid; grid-template-columns: 42px auto; column-gap: 10px; align-items: center; }
 .profile small { grid-column: 2; color: #8ec1ff; font-weight: 600; }
 .avatar { grid-row: 1 / span 2; width: 40px; height: 40px; border-radius: 50%; background: #d9e2ec; }
@@ -18,20 +20,40 @@ h1 { margin: 0; color: #183655; font-size: 28px; font-weight: 600; }
 .badge.awaiting_client, .badge.client_signed, .badge.awaiting_company { background: #d99a00; }
 .badge.fully_signed { background: #3578f6; }
 .warning { margin-bottom: 18px; padding: 14px 18px; color: #8a4b00; background: #fff4db; border: 1px solid #ffd58a; border-radius: 4px; }
-.onlyoffice-slot[hidden], .document-editor[hidden] { display: none !important; }
 .hidden { display: none !important; }
-.editor-card { background: #fff; border: 1px solid #d8dee8; border-radius: 4px; box-shadow: 0 1px 2px rgba(25, 38, 60, .05); }
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
+.editor-card, .versions-panel { background: #fff; border: 1px solid #d8dee8; border-radius: 4px; box-shadow: 0 1px 2px rgba(25, 38, 60, .05); }
+.editor-card { overflow: hidden; }
 .toolbar { display: flex; justify-content: space-between; gap: 16px; align-items: center; min-height: 64px; padding: 12px 24px; background: #fff; border-bottom: 1px solid #d8dee8; }
 .toolbar strong { display: block; margin-bottom: 6px; font-size: 20px; }
 .toolbar small { color: #8a94a6; }
-button { min-width: 160px; height: 46px; border: 0; border-radius: 4px; color: #fff; background: #3578f6; font-size: 15px; cursor: pointer; }
-button:disabled { opacity: .62; cursor: not-allowed; }
+.toolbar > button { min-width: 160px; height: 46px; border: 0; border-radius: 4px; color: #fff; background: #3578f6; font-size: 15px; cursor: pointer; }
+.toolbar > button:disabled, .version-actions button:disabled { opacity: .62; cursor: not-allowed; }
 .spinner { width: 14px; height: 14px; margin-right: 8px; display: inline-block; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; }
-.onlyoffice-slot { height: calc(100vh - 245px); min-height: 900px; margin: 0; display: block; color: #657086; background: #f7f9fc; border-top: 1px solid #d8dee8; overflow: hidden; }
-.onlyoffice-slot iframe { width: 100% !important; height: 100% !important; min-height: 900px !important; border: 0 !important; display: block !important; }
-.document-editor { min-height: 900px; margin: 0; padding: 36px; color: #1f2f43; background: #fff; border-top: 1px solid #d8dee8; font: 17px/1.7 Georgia, serif; outline-color: #3578f6; white-space: pre-wrap; }
-.document-editor:empty::before { content: attr(data-placeholder); color: #8a94a6; }
-.document-editor[contenteditable="false"] { background: #f9fafc; color: #657086; cursor: not-allowed; }
+.document-editor { min-height: 720px; width: 100%; border: 0; border-top: 1px solid #d8dee8; }
+.tox.tox-tinymce { border: 0; border-top: 1px solid #d8dee8; border-radius: 0; }
+.tox .tox-menubar { min-height: 34px; padding: 2px 16px; background: #fff; border-bottom: 1px solid #e2e8f0; }
+.tox .tox-toolbar-overlord { padding: 5px 14px 6px; background: #fbfcfe; border-bottom: 1px solid #d8dee8; }
+.tox .tox-toolbar__primary { background: transparent !important; }
+.tox .tox-toolbar__group { border-color: #dbe3ee !important; }
+.tox .tox-tbtn, .tox .tox-listboxfield .tox-listbox--select { border-radius: 3px; }
+.tox .tox-tbtn:hover, .tox .tox-tbtn--enabled { background: #eaf1fb !important; }
+.tox .tox-edit-area::before { border: 0 !important; }
+.tox .tox-edit-area__iframe { background: #eef2f7; }
+.tox .tox-statusbar { background: #fbfcfe; border-top: 1px solid #d8dee8; }
+.versions-panel { position: sticky; top: 14px; max-height: calc(100vh - 170px); overflow: hidden; }
+.versions-header { min-height: 64px; padding: 14px 18px; border-bottom: 1px solid #d8dee8; }
+.versions-header h2 { margin: 0 0 6px; color: #183655; font-size: 18px; font-weight: 600; }
+.versions-header small, .muted { color: #8a94a6; }
+.versions-list { max-height: calc(100vh - 238px); overflow: auto; scrollbar-width: thin; }
+.version-item { display: grid; gap: 10px; padding: 14px 18px; border-bottom: 1px solid #edf1f6; }
+.version-item strong { color: #183655; font-size: 15px; }
+.version-item small { color: #657086; line-height: 1.35; }
+.version-actions { display: flex; gap: 8px; }
+.version-actions a, .version-actions button { min-width: 0; height: 34px; padding: 0 12px; border-radius: 4px; font-size: 13px; text-decoration: none; }
+.version-actions a { display: inline-flex; align-items: center; color: #3578f6; background: #edf4ff; }
+.version-actions button { color: #fff; background: #117d71; }
+.versions-list .muted { margin: 0; padding: 18px; }
 .success { color: #268a12 !important; }
 .error { color: #d91e1e !important; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -39,7 +61,9 @@ button:disabled { opacity: .62; cursor: not-allowed; }
     .topbar, .nav { padding-inline: 20px; }
     .nav { gap: 18px; overflow-x: auto; }
     .titlebar, .toolbar { align-items: stretch; flex-direction: column; }
+    .workspace { grid-template-columns: 1fr; }
     .toolbar { padding: 18px; }
-    .onlyoffice-slot, .document-editor { min-height: 640px; height: calc(100vh - 280px); }
-    .document-editor { min-height: 420px; padding: 22px; }
+    .document-editor, .tox.tox-tinymce { min-height: 560px; }
+    .versions-panel { position: static; max-height: none; }
+    .versions-list { max-height: 360px; }
 }

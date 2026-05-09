@@ -2,8 +2,8 @@
 $basePath = '/itec_contract_system';
 $state = strtoupper($contract['signing_state'] ?? 'DRAFT');
 $isReadOnly = $state !== 'DRAFT';
-$onlyoffice = $contract['onlyoffice'] ?? [];
 $assetVersion = time();
+$editorContent = $contract['content'] ?? '<p></p>';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -16,7 +16,10 @@ $assetVersion = time();
 <body>
     <!-- Contract system shell -->
     <header class="topbar">
-        <div class="brand">ITEC Contract System <span>contract editor</span></div>
+        <div class="brand">
+            <span class="brand-logo-frame"><img class="brand-logo" src="<?= $basePath ?>/public/assets/logo.png" alt="System logo"></span>
+            <span>contract editor</span>
+        </div>
         <div class="profile"><span class="avatar"></span><strong>Staff Portal</strong><small>contract team</small></div>
     </header>
 
@@ -42,35 +45,47 @@ $assetVersion = time();
             Read Only: this contract is no longer in Draft state and cannot be edited.
         </div>
 
-        <section class="editor-card">
-            <div class="toolbar">
-                <div>
-                    <strong>Contract #<?= (int) $contract['id'] ?></strong>
-                    <small id="saveMessage">Ready to edit</small>
+        <div class="workspace">
+            <section class="editor-card">
+                <div class="toolbar">
+                    <div>
+                        <strong>Contract #<?= (int) $contract['id'] ?></strong>
+                        <small id="saveMessage">Ready to edit</small>
+                    </div>
+                    <button id="saveButton" type="button" <?= $isReadOnly ? 'disabled' : '' ?>>
+                        <span class="spinner hidden"></span><span class="buttonText">Save Contract</span>
+                    </button>
                 </div>
-                <button id="saveButton" type="button" <?= $isReadOnly ? 'disabled' : '' ?>>
-                    <span class="spinner hidden"></span><span class="buttonText">Save Contract</span>
-                </button>
-            </div>
 
-            <div id="onlyOfficeMount" class="onlyoffice-slot">Loading ONLYOFFICE editor...</div>
+                <textarea id="documentEditor"
+                          class="document-editor"
+                          data-placeholder="Start editing contract text..."><?= htmlspecialchars($editorContent, ENT_QUOTES, 'UTF-8') ?></textarea>
+            </section>
 
-            <div id="documentEditor"
-                 class="document-editor"
-                 hidden
-                 contenteditable="<?= $isReadOnly ? 'false' : 'true' ?>"
-                 data-placeholder="Start editing contract text..."><?= nl2br(htmlspecialchars($contract['content'] ?? '')) ?></div>
-        </section>
+            <aside class="versions-panel" aria-label="Version history">
+                <div class="versions-header">
+                    <h2>Versions</h2>
+                    <small id="versionCount">0 saved</small>
+                </div>
+                <div id="versionsList" class="versions-list">
+                    <p class="muted">Loading history...</p>
+                </div>
+            </aside>
+        </div>
     </main>
 
     <script>
         window.contractEditorConfig = {
             saveUrl: "<?= $basePath ?>/contracts/<?= (int) $contract['id'] ?>/save",
             statusUrl: "<?= $basePath ?>/contracts/<?= (int) $contract['id'] ?>/status",
-            signingState: "<?= htmlspecialchars($state) ?>",
-            onlyOffice: <?= json_encode($onlyoffice, JSON_UNESCAPED_SLASHES) ?>
+            versionsUrl: "<?= $basePath ?>/contracts/<?= (int) $contract['id'] ?>/versions",
+            restoreUrlTemplate: "<?= $basePath ?>/contracts/<?= (int) $contract['id'] ?>/versions/__VERSION__/restore",
+            downloadUrlTemplate: "<?= $basePath ?>/contracts/<?= (int) $contract['id'] ?>/versions/__VERSION__/download",
+            tinyMceBaseUrl: "<?= $basePath ?>/public/vendor/tinymce",
+            signingState: "<?= htmlspecialchars($state) ?>"
         };
     </script>
+    <script src="<?= $basePath ?>/public/vendor/tinymce/tinymce.min.js"></script>
     <script src="<?= $basePath ?>/public/assets/js/contract-editor.js?v=<?= $assetVersion ?>"></script>
 </body>
 </html>

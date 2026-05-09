@@ -1,16 +1,22 @@
-<?php $basePath = '/itec_contract_system'; ?>
+<?php
+$basePath = '/itec_contract_system';
+$assetVersion = time();
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($title) ?></title>
-    <link rel="stylesheet" href="<?= $basePath ?>/public/assets/css/home.css">
+    <link rel="stylesheet" href="<?= $basePath ?>/public/assets/css/home.css?v=<?= $assetVersion ?>">
 </head>
 <body>
     <!-- Contract system header -->
     <header class="topbar">
-        <div class="brand">ITEC Contract System <span>portal</span></div>
+        <div class="brand">
+            <span class="brand-logo-frame"><img class="brand-logo" src="<?= $basePath ?>/public/assets/logo.png" alt="System logo"></span>
+            <span>portal</span>
+        </div>
         <div class="profile"><span class="avatar"></span><strong>Staff Portal</strong><small>contract team</small></div>
     </header>
 

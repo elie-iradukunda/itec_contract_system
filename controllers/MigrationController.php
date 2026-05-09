@@ -33,6 +33,7 @@ class MigrationController extends Controller
             'CreateAuditLogsTable' => 50,
             'CreateContractSealsTable' => 60,
             'CreateContractVersionsTable' => 70,
+            'CreateDocVersionsTable' => 75,
             'CreateDocumentHashesTable' => 80,
             'CreateNotificationsTable' => 90,
             'CreateUploadedDocumentsTable' => 100,
