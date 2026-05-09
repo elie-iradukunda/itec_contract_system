@@ -9,17 +9,15 @@ class CreateDocSignaturesTable extends Migration
         $this->db->exec("
             CREATE TABLE IF NOT EXISTS doc_signatures (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                doc_id INT NOT NULL,
-                signer_id INT NOT NULL,
-                signature_blob LONGTEXT NOT NULL,
-                public_key TEXT NULL,
+                contract_id INT NOT NULL,
+                signer_id VARCHAR(255) NOT NULL,
+                signature_file_path VARCHAR(500) NOT NULL,
+                public_key TEXT NOT NULL,
                 doc_hash VARCHAR(255) NOT NULL,
                 signed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (doc_id) REFERENCES contracts(id) ON DELETE CASCADE,
-                FOREIGN KEY (signer_id) REFERENCES users(id) ON DELETE CASCADE,
-                INDEX doc_signatures_doc_id_index (doc_id),
-                INDEX doc_signatures_signer_id_index (signer_id),
-                INDEX doc_signatures_doc_hash_index (doc_hash)
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE,
+                INDEX idx_contract_signer (contract_id, signer_id)
             )
         ");
     }

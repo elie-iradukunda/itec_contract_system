@@ -11,13 +11,13 @@ class CreateDocVersionsTable extends Migration
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 contract_id INT NOT NULL,
                 version_no INT NOT NULL,
-                saved_by INT NULL,
-                saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                saved_by VARCHAR(255) NOT NULL,
                 file_path VARCHAR(500) NOT NULL,
+                saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE KEY doc_versions_contract_version_unique (contract_id, version_no),
-                INDEX doc_versions_contract_id_index (contract_id),
-                INDEX doc_versions_saved_by_index (saved_by)
+                FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE,
+                INDEX idx_contract_version (contract_id, version_no),
+                UNIQUE KEY unique_contract_version (contract_id, version_no)
             )
         ");
     }

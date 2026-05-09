@@ -9,19 +9,17 @@ class CreateDocSignatureAuditTable extends Migration
         $this->db->exec("
             CREATE TABLE IF NOT EXISTS doc_signature_audit (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                doc_id INT NOT NULL,
-                signer_id INT NULL,
-                ip VARCHAR(45) NULL,
-                user_agent TEXT NULL,
+                contract_id INT NOT NULL,
+                signer_id VARCHAR(255) NOT NULL,
+                ip_address VARCHAR(45) NOT NULL,
+                user_agent TEXT,
                 doc_hash VARCHAR(255) NOT NULL,
-                event_type VARCHAR(80) NOT NULL,
-                `timestamp` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (doc_id) REFERENCES contracts(id) ON DELETE CASCADE,
-                FOREIGN KEY (signer_id) REFERENCES users(id) ON DELETE SET NULL,
-                INDEX doc_signature_audit_doc_id_index (doc_id),
-                INDEX doc_signature_audit_signer_id_index (signer_id),
-                INDEX doc_signature_audit_event_type_index (event_type),
-                INDEX doc_signature_audit_timestamp_index (`timestamp`)
+                event_type ENUM('signature_created', 'signature_verified', 'tamper_detected', 'seal_applied') NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE,
+                INDEX idx_contract_event (contract_id, event_type),
+                INDEX idx_timestamp (timestamp)
             )
         ");
     }
