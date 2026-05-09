@@ -7,13 +7,26 @@ namespace Composer\Autoload;
 class ComposerStaticInit0961b8e2a2e5ac6d59c46366b0d8f537
 {
     public static $prefixLengthsPsr4 = array (
+        'U' =>
+        array (
+            'Ulid\\' => 5,
+        ),
         'S' =>
         array (
             'Services\\' => 9,
         ),
+        'P' =>
+        array (
+            'PHPMailer\\PHPMailer\\' => 20,
+        ),
         'M' =>
         array (
             'Models\\' => 7,
+            'Middleware\\' => 11,
+        ),
+        'D' =>
+        array (
+            'Database\\Seeders\\' => 17,
         ),
         'C' =>
         array (
@@ -23,13 +36,29 @@ class ComposerStaticInit0961b8e2a2e5ac6d59c46366b0d8f537
     );
 
     public static $prefixDirsPsr4 = array (
+        'Ulid\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/robinvdvleuten/ulid/src',
+        ),
         'Services\\' =>
         array (
             0 => __DIR__ . '/../..' . '/services',
         ),
+        'PHPMailer\\PHPMailer\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/phpmailer/phpmailer/src',
+        ),
         'Models\\' =>
         array (
             0 => __DIR__ . '/../..' . '/models',
+        ),
+        'Middleware\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/middleware',
+        ),
+        'Database\\Seeders\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/database/seeders',
         ),
         'Core\\' =>
         array (
@@ -43,6 +72,18 @@ class ComposerStaticInit0961b8e2a2e5ac6d59c46366b0d8f537
 
     public static $classMap = array (
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
+        'Datamatrix' => __DIR__ . '/..' . '/tecnickcom/tcpdf/include/barcodes/datamatrix.php',
+        'PDF417' => __DIR__ . '/..' . '/tecnickcom/tcpdf/include/barcodes/pdf417.php',
+        'QRcode' => __DIR__ . '/..' . '/tecnickcom/tcpdf/include/barcodes/qrcode.php',
+        'TCPDF' => __DIR__ . '/..' . '/tecnickcom/tcpdf/tcpdf.php',
+        'TCPDF2DBarcode' => __DIR__ . '/..' . '/tecnickcom/tcpdf/tcpdf_barcodes_2d.php',
+        'TCPDFBarcode' => __DIR__ . '/..' . '/tecnickcom/tcpdf/tcpdf_barcodes_1d.php',
+        'TCPDF_COLORS' => __DIR__ . '/..' . '/tecnickcom/tcpdf/include/tcpdf_colors.php',
+        'TCPDF_FILTERS' => __DIR__ . '/..' . '/tecnickcom/tcpdf/include/tcpdf_filters.php',
+        'TCPDF_FONTS' => __DIR__ . '/..' . '/tecnickcom/tcpdf/include/tcpdf_fonts.php',
+        'TCPDF_FONT_DATA' => __DIR__ . '/..' . '/tecnickcom/tcpdf/include/tcpdf_font_data.php',
+        'TCPDF_IMAGES' => __DIR__ . '/..' . '/tecnickcom/tcpdf/include/tcpdf_images.php',
+        'TCPDF_STATIC' => __DIR__ . '/..' . '/tecnickcom/tcpdf/include/tcpdf_static.php',
     );
 
     public static function getInitializer(ClassLoader $loader)
