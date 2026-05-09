@@ -6,8 +6,12 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
+    'Ulid\\' => array($vendorDir . '/robinvdvleuten/ulid/src'),
     'Services\\' => array($baseDir . '/services'),
+    'PHPMailer\\PHPMailer\\' => array($vendorDir . '/phpmailer/phpmailer/src'),
     'Models\\' => array($baseDir . '/models'),
+    'Middleware\\' => array($baseDir . '/middleware'),
+    'Database\\Seeders\\' => array($baseDir . '/database/seeders'),
     'Core\\' => array($baseDir . '/core'),
     'Controllers\\' => array($baseDir . '/controllers'),
 );
