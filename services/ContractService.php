@@ -28,6 +28,8 @@ class ContractService
 
     public function getEditorData($id)
     {
+        print_r($id);
+        return null;
         // Load contract data needed by the editor page.
         return $this->contractModel->getEditorData($id);
     }
@@ -69,4 +71,5 @@ class ContractService
         header('Content-Length: ' . filesize($path));
         readfile($path);
     }
+
 }

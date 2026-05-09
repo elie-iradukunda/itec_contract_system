@@ -27,24 +27,7 @@ class Contract
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
-    public function getEditorData($id)
-    {
-        // Prepare editor content and document file details.
-        $contract = $this->safeFind($id);
-        $folder = $this->ensureContractFolder($id);
-        $htmlFile = $folder . '/contract.html';
-        $textFile = $folder . '/contract.txt';
-        $docxFile = $folder . '/contract.docx';
-
-        return [
-            'id' => (int) $id,
-            'title' => $contract['title'] ?? "Contract #{$id}",
-            'signing_state' => $contract['signing_state'] ?? 'DRAFT',
-            'content' => $this->loadEditorHtml($htmlFile, $textFile, $docxFile),
-            'file_name' => 'contract.docx',
-            'file_exists' => file_exists($docxFile)
-        ];
-    }
+    
 
     public function saveEditorContent($id, $content)
     {

@@ -79,7 +79,7 @@
                     '<td>' + ui.escapeHtml(contract.updated) + '</td>',
                     '<td><div class="table-actions">',
                     '<button class="row-action" type="button" data-select-contract="' + contract.id + '">View</button>',
-                    '<a class="row-action primary" href="' + context.basePath + '/contracts/' + contract.id + '/edit">Editor</a>',
+                    '<a class="row-action primary" href="' + context.basePath + '/contracts/' + contract.id + '/editor">Editor</a>',
                     '</div></td>',
                     '</tr>'
                 ].join('');
