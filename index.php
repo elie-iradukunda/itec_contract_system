@@ -8,6 +8,7 @@ require_once __DIR__ . '/vendor/autoload.php';
 use Core\Container;
 use Core\Router;
 use Core\Database;
+use Core\Mail;
 
 // Load .env file
 if (file_exists(__DIR__ . '/.env')) {
@@ -28,6 +29,11 @@ $container = new Container();
 $container->singleton(Database::class, function() {
     return Database::getInstance();
 });
+
+$container->singleton(Mail::class, function($container) {
+    return new Mail();
+});
+
 
 // Register Models
 $container->bind(\Models\User::class, function($container) {
