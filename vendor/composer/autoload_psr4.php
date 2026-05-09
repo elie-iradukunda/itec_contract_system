@@ -6,11 +6,19 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
+    'setasign\\Fpdi\\' => array($vendorDir . '/setasign/fpdi/src'),
     'Ulid\\' => array($vendorDir . '/robinvdvleuten/ulid/src'),
+    'Svg\\' => array($vendorDir . '/dompdf/php-svg-lib/src/Svg'),
     'Services\\' => array($baseDir . '/services'),
+    'Sabberworm\\CSS\\' => array($vendorDir . '/sabberworm/php-css-parser/src'),
+    'PhpOffice\\PhpWord\\' => array($vendorDir . '/phpoffice/phpword/src/PhpWord'),
     'PHPMailer\\PHPMailer\\' => array($vendorDir . '/phpmailer/phpmailer/src'),
     'Models\\' => array($baseDir . '/models'),
     'Middleware\\' => array($baseDir . '/middleware'),
+    'Masterminds\\' => array($vendorDir . '/masterminds/html5/src'),
+    'Laminas\\Escaper\\' => array($vendorDir . '/laminas/laminas-escaper/src'),
+    'FontLib\\' => array($vendorDir . '/dompdf/php-font-lib/src/FontLib'),
+    'Dompdf\\' => array($vendorDir . '/dompdf/dompdf/src'),
     'Database\\Seeders\\' => array($baseDir . '/database/seeders'),
     'Core\\' => array($baseDir . '/core'),
     'Controllers\\' => array($baseDir . '/controllers'),
