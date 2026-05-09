@@ -1,198 +1,235 @@
 <?php
-$basePath = '/itec_contract_system';
-$assetVersion = time();
-$pageTitle = 'Contracts';
-$pageHeading = 'Contracts';
-$pageEyebrow = 'contract lifecycle';
-$pageLead = 'Browse, create, filter, and inspect contracts while keeping execution status, ownership, and next actions visible.';
-$activeNav = 'contracts';
-$headerMeta = 'contract workspace';
-$pageActions = [
-    '<button id="newContractButton" class="button" type="button">New Contract</button>'
-];
-$pageScripts = [
-    $basePath . '/public/assets/js/contract-ui-common.js?v=' . $assetVersion,
-    $basePath . '/public/assets/js/contract-demo-store.js?v=' . $assetVersion,
-    $basePath . '/public/assets/js/contracts-page.js?v=' . $assetVersion,
-    $basePath . '/public/assets/js/portal.js?v=' . $assetVersion
-];
-
+$title = 'Contracts Dashboard';
 ob_start();
 ?>
-<section class="metric-grid" aria-label="Contract status summary">
-    <article class="metric">
-        <span class="metric-code draft">DR</span>
-        <div><strong id="draftCount">0</strong><small>Draft</small></div>
-    </article>
-    <article class="metric">
-        <span class="metric-code client">CL</span>
-        <div><strong id="clientCount">0</strong><small>Awaiting client</small></div>
-    </article>
-    <article class="metric">
-        <span class="metric-code company">CO</span>
-        <div><strong id="companyCount">0</strong><small>Company action</small></div>
-    </article>
-    <article class="metric">
-        <span class="metric-code final">FN</span>
-        <div><strong id="finalCount">0</strong><small>Fully signed</small></div>
-    </article>
-</section>
 
-<section class="notice-banner success">
-    <strong>Frontend demo flow is active</strong>
-    <span>Create a contract here, save the required fields, generate a client portal link, and test the client read and sign journey without touching the backend.</span>
-</section>
-
-<section class="workspace-grid">
-    <div class="surface contracts-surface">
-        <div class="list-toolbar">
-            <label class="search-box" for="contractSearch">
-                <span>Search</span>
-                <input id="contractSearch" type="search" placeholder="Client, title, owner">
-            </label>
-            <label class="filter-box" for="statusFilter">
-                <span>Status</span>
-                <select id="statusFilter">
-                    <option value="all">All statuses</option>
-                    <option value="DRAFT">Draft</option>
-                    <option value="AWAITING_CLIENT">Awaiting client</option>
-                    <option value="CLIENT_SIGNED">Client signed</option>
-                    <option value="AWAITING_COMPANY">Company action</option>
-                    <option value="FULLY_SIGNED">Fully signed</option>
-                </select>
-            </label>
+<div x-data="contractsList()" x-init="loadContracts()">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">Contracts</h2>
+            <p class="text-muted mb-0">Manage and track all contract documents</p>
         </div>
+        <a href="<?= BASE_URL ?>/contracts/create" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> Create Contract
+        </a>
+    </div>
 
-        <div class="responsive-table">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Contract</th>
-                        <th>Client</th>
-                        <th>Type</th>
-                        <th>Status</th>
-                        <th>Owner</th>
-                        <th>Updated</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="contractsTableBody"></tbody>
-            </table>
-        </div>
-
-        <div id="emptyContracts" class="empty-state hidden">
-            <strong>No contracts found</strong>
-            <span>Adjust the filters or create a new contract.</span>
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Status Filter</label>
+                    <select class="form-select" x-model="filters.status" @change="loadContracts()">
+                        <option value="">All Status</option>
+                        <option value="DRAFT">Draft</option>
+                        <option value="AWAITING_CLIENT">Awaiting Client</option>
+                        <option value="CLIENT_SIGNED">Client Signed</option>
+                        <option value="AWAITING_COMPANY">Awaiting Company</option>
+                        <option value="FULLY_SIGNED">Fully Signed</option>
+                    </select>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label">Search</label>
+                    <input type="text" class="form-control" x-model="filters.search" @keyup.enter="loadContracts()" placeholder="Search by title or ID...">
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button class="btn btn-outline-secondary w-100" @click="resetFilters()">
+                        <i class="bi bi-arrow-repeat"></i> Reset Filters
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
-    <aside class="surface detail-panel">
-        <div class="section-head compact">
-            <div>
-                <p>Selected contract</p>
-                <h2 id="detailTitle">Choose a contract</h2>
-            </div>
+    <!-- Contracts Table -->
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 60px">ID</th>
+                        <th>Title / Description</th>
+                        <th style="width: 140px">Status</th>
+                        <th style="width: 120px">Created</th>
+                        <th style="width: 120px">Updated</th>
+                        <th style="width: 120px">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Loading State -->
+                    <template x-if="loading">
+                        <tr>
+                            <td colspan="6" class="text-center py-5">
+                                <div class="spinner-border text-primary" role="status"></div>
+                                <p class="mt-2 mb-0 text-muted">Loading contracts...</p>
+                            </td>
+                        </tr>
+                    </template>
+                    
+                    <!-- Empty State -->
+                    <template x-if="!loading && contracts.length === 0">
+                        <tr>
+                            <td colspan="6" class="text-center py-5">
+                                <i class="bi bi-folder2-open fs-1 text-muted"></i>
+                                <p class="mt-2 mb-0 text-muted">No contracts found</p>
+                                <a href="<?= BASE_URL ?>/contracts/create" class="btn btn-sm btn-primary mt-3">
+                                    <i class="bi bi-plus-lg"></i> Create your first contract
+                                </a>
+                            </td>
+                        </tr>
+                    </template>
+                    
+                    <!-- Contracts List -->
+                    <template x-for="contract in contracts" :key="contract.id">
+                        <tr>
+                            <td class="font-monospace small" x-text="contract.id"></td>
+                            <td>
+                                <strong x-text="contract.title"></strong>
+                                <div class="small text-muted" x-text="contract.description || 'No description'"></div>
+                            </td>
+                            <td>
+                                <span x-show="contract.signing_state === 'DRAFT'" class="badge bg-secondary px-2 py-1">
+                                    <i class="bi bi-pencil-square me-1"></i> Draft
+                                </span>
+                                <span x-show="contract.signing_state === 'AWAITING_CLIENT'" class="badge bg-info text-dark px-2 py-1">
+                                    <i class="bi bi-envelope me-1"></i> Awaiting Client
+                                </span>
+                                <span x-show="contract.signing_state === 'CLIENT_SIGNED'" class="badge bg-warning text-dark px-2 py-1">
+                                    <i class="bi bi-check2-circle me-1"></i> Client Signed
+                                </span>
+                                <span x-show="contract.signing_state === 'AWAITING_COMPANY'" class="badge bg-primary px-2 py-1">
+                                    <i class="bi bi-building me-1"></i> Awaiting Company
+                                </span>
+                                <span x-show="contract.signing_state === 'FULLY_SIGNED'" class="badge bg-success px-2 py-1">
+                                    <i class="bi bi-check2-all me-1"></i> Fully Signed
+                                </span>
+                            </td>
+                            <td class="small text-muted" x-text="formatDate(contract.created_at)"></td>
+                            <td class="small text-muted" x-text="formatDate(contract.updated_at)"></td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <a :href="BASE_URL + '/contracts/' + contract.id + '/edit'" 
+                                       x-show="contract.signing_state === 'DRAFT'"
+                                       class="btn btn-outline-primary"
+                                       title="Edit Contract">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <a :href="BASE_URL + '/contracts/' + contract.id + '/sign'" 
+                                       x-show="contract.signing_state === 'AWAITING_CLIENT'"
+                                       class="btn btn-outline-info"
+                                       title="Sign Contract">
+                                        <i class="bi bi-pen"></i>
+                                    </a>
+                                    <a :href="BASE_URL + '/contracts/' + contract.id + '/sign-company'" 
+                                       x-show="contract.signing_state === 'AWAITING_COMPANY'"
+                                       class="btn btn-outline-primary"
+                                       title="Company Sign">
+                                        <i class="bi bi-building-check"></i>
+                                    </a>
+                                    <a :href="BASE_URL + '/contracts/' + contract.id" 
+                                       class="btn btn-outline-secondary"
+                                       title="View Details">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                    <a :href="BASE_URL + '/contracts/' + contract.id + '/audit'" 
+                                       class="btn btn-outline-secondary"
+                                       title="View Audit Trail">
+                                        <i class="bi bi-list-check"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
         </div>
-        <dl class="detail-list">
-            <div><dt>Client</dt><dd id="detailClient">-</dd></div>
-            <div><dt>Email</dt><dd id="detailEmail">-</dd></div>
-            <div><dt>Document type</dt><dd id="detailType">-</dd></div>
-            <div><dt>Signing path</dt><dd id="detailPath">-</dd></div>
-            <div><dt>Next action</dt><dd id="detailAction">-</dd></div>
-        </dl>
-        <div class="surface-pad share-panel">
-            <strong>Client portal link</strong>
-            <a id="detailPortalLink" class="inline-link" href="<?= $basePath ?>/views/clients/portal.php" target="_blank" rel="noopener">Portal link will appear here</a>
-            <small id="detailShareText" class="muted-copy">Send the client link after the record is ready.</small>
-        </div>
-        <div class="timeline">
-            <span class="timeline-step active">Draft</span>
-            <span class="timeline-step">Client</span>
-            <span class="timeline-step">Lock</span>
-            <span class="timeline-step">Company</span>
-            <span class="timeline-step">Final</span>
-        </div>
-        <div class="detail-actions">
-            <a id="detailEditorLink" class="button" href="<?= $basePath ?>/contracts/1/edit">Open Editor</a>
-            <button id="sendToClientButton" class="button success" type="button">Send to Client</button>
-            <button id="copyPortalLinkButton" class="button ghost" type="button">Copy Link</button>
-            <a id="previewClientPortalLink" class="button ghost" href="<?= $basePath ?>/views/clients/portal.php" target="_blank" rel="noopener">Open Client Portal</a>
-            <a id="detailAuditLink" class="button ghost" href="<?= $basePath ?>/views/contracts/audit-trail.php" target="_blank" rel="noopener">Audit Trail</a>
-        </div>
-        <div class="surface-pad">
-            <a id="emailClientLink" class="row-action" href="mailto:">Open Email Draft</a>
-            <span id="detailActionMessage" class="muted-copy"></span>
-        </div>
-    </aside>
-</section>
-
-<div id="contractModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="contractModalTitle">
-    <section class="modal contract-modal">
-        <div class="modal-header">
-            <div>
-                <p>New contract</p>
-                <h2 id="contractModalTitle">Create contract record</h2>
-            </div>
-            <button id="closeContractModal" class="icon-button" type="button" aria-label="Close">x</button>
-        </div>
-
-        <form id="contractForm" class="contract-form">
-            <label>
-                <span>Contract title</span>
-                <input name="title" type="text" required placeholder="Service Agreement">
-            </label>
-            <label>
-                <span>Client name</span>
-                <input name="client" type="text" required placeholder="Client company">
-            </label>
-            <label>
-                <span>Client email</span>
-                <input name="clientEmail" type="email" required placeholder="client@example.com">
-            </label>
-            <label>
-                <span>Document type</span>
-                <select name="type">
-                    <option>Service Agreement</option>
-                    <option>Financing Contract</option>
-                    <option>Lease Addendum</option>
-                    <option>Legal Agreement</option>
-                </select>
-            </label>
-            <label>
-                <span>Signing path</span>
-                <select name="path">
-                    <option>Digital first</option>
-                    <option>Hard copy first</option>
-                    <option>Client decides</option>
-                </select>
-            </label>
-            <label>
-                <span>Owner</span>
-                <input name="owner" type="text" value="Elie">
-            </label>
-            <label>
-                <span>Status</span>
-                <select name="status">
-                    <option value="DRAFT">Draft</option>
-                    <option value="AWAITING_CLIENT">Awaiting client</option>
-                    <option value="AWAITING_COMPANY">Company action</option>
-                </select>
-            </label>
-            <label class="field-span">
-                <span>Contract body</span>
-                <textarea name="body" required placeholder="Write the contract summary, pricing terms, obligations, and signature instructions for the client."></textarea>
-            </label>
-            <div class="form-actions">
-                <button class="button ghost" type="button" id="cancelContractForm">Cancel</button>
-                <button class="button" type="submit">Create Contract</button>
-            </div>
-        </form>
-    </section>
+    </div>
+    
+    <!-- Results Count -->
+    <div class="mt-3 text-muted small" x-show="!loading && contracts.length > 0">
+        Showing <span x-text="contracts.length"></span> contract(s)
+    </div>
 </div>
 
 <script>
-    window.contractPortalConfig = { basePath: "<?= $basePath ?>" };
+const BASE_URL = '<?= BASE_URL ?>';
+
+function contractsList() {
+    return {
+        contracts: [],
+        loading: false,
+        filters: {
+            status: '',
+            search: ''
+        },
+        BASE_URL: BASE_URL,
+        
+        async loadContracts() {
+            this.loading = true;
+            try {
+                // Build query string
+                const params = new URLSearchParams();
+                if (this.filters.status) params.append('status', this.filters.status);
+                if (this.filters.search) params.append('search', this.filters.search);
+                
+                let url = BASE_URL + '/api/contracts';
+                if (params.toString()) url += '?' + params.toString();
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.success) {
+                    this.contracts = data.contracts || [];
+                } else {
+                    this.contracts = [];
+                }
+            } catch (error) {
+                console.error('Error loading contracts:', error);
+                // Demo data for UI testing when API isn't ready
+                this.contracts = [
+                    { id: 1, title: 'Service Agreement - ABC Corp', description: 'Annual IT support services', signing_state: 'DRAFT', created_at: '2026-05-01 10:00:00', updated_at: '2026-05-07 14:30:00' },
+                    { id: 2, title: 'Financing Contract - XYZ Ltd', description: 'Equipment lease agreement', signing_state: 'AWAITING_CLIENT', created_at: '2026-05-05 09:15:00', updated_at: '2026-05-06 11:20:00' },
+                    { id: 3, title: 'NDA - Strategic Partner', description: 'Confidentiality agreement', signing_state: 'CLIENT_SIGNED', created_at: '2026-04-28 13:00:00', updated_at: '2026-05-02 16:45:00' },
+                    { id: 4, title: 'Partnership Agreement', description: 'Joint venture terms', signing_state: 'AWAITING_COMPANY', created_at: '2026-05-03 10:30:00', updated_at: '2026-05-08 09:00:00' },
+                    { id: 5, title: 'Master Services Agreement', description: 'Ongoing services', signing_state: 'FULLY_SIGNED', created_at: '2026-04-15 14:00:00', updated_at: '2026-04-20 11:30:00' }
+                ];
+            } finally {
+                this.loading = false;
+            }
+        },
+        
+        resetFilters() {
+            this.filters.status = '';
+            this.filters.search = '';
+            this.loadContracts();
+        },
+        
+        formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            try {
+                let date = new Date(dateString);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            } catch {
+                return dateString;
+            }
+        },
+        
+        getStatusBadge(status) {
+            const badges = {
+                'DRAFT': 'bg-secondary',
+                'AWAITING_CLIENT': 'bg-info text-dark',
+                'CLIENT_SIGNED': 'bg-warning text-dark',
+                'AWAITING_COMPANY': 'bg-primary',
+                'FULLY_SIGNED': 'bg-success'
+            };
+            return badges[status] || 'bg-secondary';
+        }
+    }
+}
 </script>
+
 <?php
-$pageContent = ob_get_clean();
-require __DIR__ . '/../layouts/app.php';
+$content = ob_get_clean();
+require_once __DIR__ . '/../layouts/app.php';
+?>
