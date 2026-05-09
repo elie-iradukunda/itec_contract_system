@@ -8,5 +8,10 @@
             "Middleware\\": "middleware/",
             "Database\\Seeders\\": "database/seeders/"
         }
+    },
+    "require": {
+        "phpmailer/phpmailer": "^7.0",
+        "tecnickcom/tcpdf": "^6.11",
+        "robinvdvleuten/ulid": "^5.0"
     }
 }
