@@ -74,9 +74,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $contractId = $_POST['contract_id'];
                 $result = $signatureService->verifyDocument($contractId);
                 if ($result['valid']) {
-                    $message = "✓ Document is VALID and has not been tampered!";
+                    $message = " Document is VALID and has not been tampered!";
                 } else {
-                    $error = "✗ " . ($result['warning'] ?? 'Document verification failed');
+                    $error = " " . ($result['warning'] ?? 'Document verification failed');
                 }
                 break;
                 
@@ -120,7 +120,7 @@ if ($contract) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Oscar Task O1 - Digital Signature Engine</title>
-    <style>
+      <style>
         * {
             margin: 0;
             padding: 0;
@@ -294,7 +294,7 @@ if ($contract) {
         <div class="subtitle">SHA-256 Hashing | OpenSSL Signatures | Tamper Detection | Signer Chain</div>
 
         <?php if ($message): ?>
-        <div class="status success">✅ <?php echo htmlspecialchars($message); ?></div>
+        <div class="status success"> <?php echo htmlspecialchars($message); ?></div>
         <?php endif; ?>
         
         <?php if ($error): ?>
@@ -328,7 +328,7 @@ if ($contract) {
                     <input type="hidden" name="contract_id" value="1">
                     
                     <div class="button-group">
-                        <button type="submit" name="action" value="create_contract" class="success">📝 Create Test Contract</button>
+                        <button type="submit" name="action" value="create_contract" class="success">Create Test Contract</button>
                     </div>
                     
                     <div class="input-group">
