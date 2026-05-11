@@ -1,3 +1,10 @@
 
 *.sh
 .envtest_oscar.php
+*.pdf
+*.log
+*.docx
+*.xlsx
+*.pptx
+
+.env
