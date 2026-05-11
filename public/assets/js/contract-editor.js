@@ -13,7 +13,9 @@
     const changeCount = document.getElementById('changeCount');
     const signingModal = document.getElementById('signingModal');
     const openSigningChoice = document.getElementById('openSigningChoice');
+    const submitForSigning = document.getElementById('submitForSigning');
     const closeSigningModal = document.getElementById('closeSigningModal');
+    const phaseInstruction = document.getElementById('phaseInstruction');
     const signingMessage = document.getElementById('signingMessage');
     const signedCopyForm = document.getElementById('signedCopyForm');
     const uploadMessage = document.getElementById('uploadMessage');
@@ -33,6 +35,7 @@
     const portalLink = document.getElementById('portalLink');
     const expiryLabel = document.getElementById('expiryLabel');
     const finalPdfPreview = document.getElementById('finalPdfPreview');
+    const createForm = document.getElementById('contractCreateForm');
     let editorInstance = null;
     let currentState = config.signingState || 'DRAFT';
     let isSaving = false;
@@ -47,8 +50,9 @@
     function setLoading(loading) {
         isSaving = loading;
         saveButton.disabled = loading || !isDraftState(currentState);
-        saveButton.querySelector('.spinner').classList.toggle('hidden', !loading);
-        saveButton.querySelector('.buttonText').textContent = loading ? 'Saving...' : 'Save Contract';
+        saveButton.querySelector('.spinner')?.classList.toggle('hidden', !loading);
+        const buttonText = saveButton.querySelector('.buttonText');
+        if (buttonText) buttonText.textContent = loading ? 'Saving...' : (config.isNew ? 'Create Contract' : 'Save Contract');
     }
 
     function setEditorReadOnly(readOnly) {
@@ -63,13 +67,16 @@
         const previousState = currentState;
         currentState = (state || 'DRAFT').toUpperCase();
         const isDraft = isDraftState(currentState);
-        badge.textContent = currentState;
-        badge.className = 'badge ' + currentState.toLowerCase();
-        banner.classList.toggle('hidden', isDraft);
+        if (badge) {
+            badge.textContent = currentState;
+            badge.className = 'badge ' + currentState.toLowerCase();
+        }
+        banner?.classList.toggle('hidden', isDraft);
         bodyLockBanner?.classList.toggle('hidden', isDraft);
         saveButton.disabled = !isDraft || isSaving;
         setEditorReadOnly(!isDraft);
         renderBodyLockState();
+        renderExecutionRail();
         renderRestoreLocks();
         renderChangeLocks();
         renderDistributionState();
@@ -126,6 +133,19 @@
 
     function isFinalSigningState(state) {
         return ['FULLY_SIGNED', 'FULLY_EXECUTED', 'EXECUTED', 'COMPLETED'].includes((state || '').toUpperCase());
+    }
+
+    function stateRank(state) {
+        return ['DRAFT', 'AWAITING_CLIENT', 'CLIENT_SIGNED', 'AWAITING_COMPANY', 'FULLY_SIGNED'].indexOf((state || '').toUpperCase());
+    }
+
+    function renderExecutionRail() {
+        const normalized = currentState === 'CLIENT_SIGNED' ? 'AWAITING_COMPANY' : currentState;
+        document.querySelectorAll('[data-execution-state]').forEach((step) => {
+            const stepState = step.dataset.executionState;
+            step.classList.toggle('active', stepState === normalized || stepState === currentState);
+            step.classList.toggle('complete', stateRank(stepState) < stateRank(currentState));
+        });
     }
 
     function portalLinkFromResult(result) {
@@ -211,18 +231,47 @@
             lockPill.className = 'lock-pill ' + (isDraft ? 'draft' : isFinal ? 'final' : 'locked');
         }
 
-        [signatureAction, sealAction].forEach((link) => {
-            if (!link) return;
-            link.classList.toggle('disabled', isDraft || isFinal);
-            link.setAttribute('aria-disabled', isDraft || isFinal ? 'true' : 'false');
-        });
+        const canSign = currentState === 'AWAITING_CLIENT';
+        const canSeal = currentState === 'AWAITING_COMPANY';
+        const canSubmit = currentState === 'DRAFT';
+
+        if (submitForSigning) submitForSigning.disabled = !canSubmit;
+        if (openSigningChoice) openSigningChoice.disabled = !(canSubmit || canSign);
+
+        if (signatureAction) {
+            signatureAction.classList.toggle('disabled', !canSign);
+            signatureAction.setAttribute('aria-disabled', canSign ? 'false' : 'true');
+        }
+
+        if (sealAction) {
+            sealAction.classList.toggle('disabled', !canSeal);
+            sealAction.setAttribute('aria-disabled', canSeal ? 'false' : 'true');
+        }
 
         if (signatureActionHint) {
             signatureActionHint.textContent = isDraft
-                ? 'Signature and seal blocks activate after the backend records the first signing state change.'
+                ? 'Signature and seal actions activate after signing begins.'
                 : isFinal
                     ? 'Execution is complete. Use Distribution to send the final PDF and read-only portal link.'
-                    : 'Body editing is locked. Continue with the next required signature or seal.';
+                    : canSign
+                        ? 'Client digital signature is ready. Body content remains locked.'
+                        : canSeal
+                        ? 'Company signature and seal are ready. Body content remains locked.'
+                        : 'Body editing is locked. Continue with the next required signature.';
+        }
+
+        if (phaseInstruction) {
+            phaseInstruction.textContent = isDraft
+                ? 'Finish internal review, then submit the draft to lock the body and invite the client.'
+                : currentState === 'AWAITING_CLIENT'
+                    ? 'Client execution is open. Choose digital signing or generate the hard-copy packet.'
+                    : currentState === 'CLIENT_SIGNED'
+                        ? 'Client signature was recorded. Company signing is ready.'
+                        : canSeal
+                            ? 'Company representative can sign and apply the seal. Final PDF generation follows.'
+                            : isFinal
+                                ? 'Execution is complete. Send the final PDF and secure tokenized link.'
+                                : 'Continue with the next available execution action.';
         }
     }
 
@@ -236,7 +285,7 @@
             finalPdfPreview.setAttribute('aria-disabled', isFinal ? 'false' : 'true');
         }
         if (distributionMessage && !isFinal) {
-            distributionMessage.textContent = 'Distribution unlocks when the backend reports FULLY_SIGNED.';
+            distributionMessage.textContent = 'Distribution unlocks after the company completes signing.';
             distributionMessage.className = '';
         }
         if (!isFinal) distributionResult?.classList.add('hidden');
@@ -329,15 +378,39 @@
 
     async function saveContract() {
         setLoading(true);
-        setMessage('Saving contract...', '');
+        setMessage(config.isNew ? 'Creating contract...' : 'Saving contract...', '');
 
         try {
-            const body = new FormData();
-            body.append('content', getEditorData());
+            // Feature E1/E2: new contracts use JSON creation; existing contracts use FormData saves for versioning.
+            let response;
+            if (config.isNew) {
+                const body = {
+                    title: document.getElementById('contractTitle')?.value || 'New Contract',
+                    client_name: document.getElementById('clientName')?.value || 'Demo Client',
+                    client_email: document.getElementById('clientEmail')?.value || 'client@itec.local',
+                    document_type: document.getElementById('contractType')?.value || '',
+                    description: document.getElementById('contractDescription')?.value || '',
+                    content: getEditorData()
+                };
 
-            const response = await fetch(config.saveUrl, { method: 'POST', body });
+                response = await fetch(config.createUrl || config.saveUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                    body: JSON.stringify(body)
+                });
+            } else {
+                const body = new FormData();
+                body.append('content', getEditorData());
+                response = await fetch(config.saveUrl, { method: 'POST', body });
+            }
+
             const result = await response.json();
             if (!response.ok || !result.success) throw new Error(result.message || 'Save failed');
+
+            if (config.isNew && result.contract_id && config.editUrlTemplate) {
+                window.location.href = config.editUrlTemplate.replace('__ID__', encodeURIComponent(result.contract_id));
+                return;
+            }
 
             const versionNo = result.version && result.version.version_no ? ' Version ' + result.version.version_no + ' created.' : '';
             setMessage((result.message || 'Contract saved successfully') + versionNo, 'success');
@@ -374,6 +447,13 @@
         signingMessage.textContent = 'Submitting signing choice...';
 
         try {
+            if (isDraftState(currentState) && config.submitUrl) {
+                const submitResponse = await fetch(config.submitUrl, { method: 'POST', headers: { Accept: 'application/json' } });
+                const submitResult = await responseJson(submitResponse);
+                if (!submitResponse.ok || submitResult.success === false) throw new Error(submitResult.message || 'Could not submit contract for signing');
+                applySigningState('AWAITING_CLIENT');
+            }
+
             const body = new FormData();
             body.append('choice', choice);
             body.append('signing_choice', choice);
@@ -383,6 +463,10 @@
             if (!response.ok || result.success === false) throw new Error(result.message || 'Signing service is not connected yet');
 
             signingMessage.textContent = choice === 'digital' ? 'Digital signing selected.' : 'Hard copy selected.';
+            if (choice === 'digital' && config.signUrl) {
+                window.location.href = config.signUrl;
+                return;
+            }
         } catch (error) {
             signingMessage.textContent = error.message || 'Signing service is not connected yet.';
         }
@@ -413,6 +497,7 @@
             if (!response.ok || result.success === false) throw new Error(result.message || 'Upload service is not connected yet');
             uploadMessage.textContent = result.message || 'Signed scan uploaded successfully.';
             uploadMessage.className = 'success';
+            pollStatus();
         } catch (error) {
             uploadMessage.textContent = error.message || 'Upload service is not connected yet.';
             uploadMessage.className = 'error';
@@ -473,7 +558,41 @@
         }
     }
 
+    async function submitDraftForSigning() {
+        if (!config.submitUrl || !isDraftState(currentState)) return;
+        setMessage('Submitting draft for client signing...', '');
+
+        try {
+            const response = await fetch(config.submitUrl, { method: 'POST', headers: { Accept: 'application/json' } });
+            const result = await responseJson(response);
+            if (!response.ok || result.success === false) throw new Error(result.message || result.error || 'Could not submit contract');
+            applySigningState(result.new_state || 'AWAITING_CLIENT');
+            setMessage(result.message || 'Contract submitted for client signing.', 'success');
+            activatePanel('signing');
+        } catch (error) {
+            setMessage(error.message || 'Could not submit contract for signing.', 'error');
+        }
+    }
+
+    async function applyCompanySeal(event) {
+        event.preventDefault();
+        if (!config.sealUrl || sealAction?.getAttribute('aria-disabled') === 'true') return;
+
+        setMessage('Applying company seal...', '');
+
+        try {
+            const response = await fetch(config.sealUrl, { method: 'POST', headers: { Accept: 'application/json' } });
+            const result = await responseJson(response);
+            if (!response.ok || result.success === false) throw new Error(result.message || result.error || 'Seal service is not connected yet');
+            setMessage(result.message || 'Company seal applied successfully.', 'success');
+            pollStatus();
+        } catch (error) {
+            setMessage(error.message || 'Unable to apply company seal.', 'error');
+        }
+    }
+
     async function pollStatus() {
+        if (!config.statusUrl) return;
         try {
             const response = await fetch(config.statusUrl, { headers: { Accept: 'application/json' } });
             if (!response.ok) return;
@@ -579,8 +698,23 @@
     }
 
     function resizeEditor() {
-        if (editorInstance && editorInstance.theme) {
-            editorInstance.theme.resizeTo(null, Math.max(760, window.innerHeight - 265));
+        if (!editorInstance) return;
+
+        const height = Math.max(760, window.innerHeight - 265);
+
+        if (editorInstance.theme && typeof editorInstance.theme.resizeTo === 'function') {
+            editorInstance.theme.resizeTo(null, height);
+            return;
+        }
+
+        const container = editorInstance.getContainer && editorInstance.getContainer();
+        if (container) {
+            container.style.height = height + 'px';
+        }
+
+        const iframe = editorInstance.iframeElement;
+        if (iframe) {
+            iframe.style.height = Math.max(520, height - 120) + 'px';
         }
     }
 
@@ -589,6 +723,10 @@
     loadVersions();
     loadChanges();
     saveButton.addEventListener('click', saveContract);
+    createForm?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        saveContract();
+    });
     window.addEventListener('resize', resizeEditor);
     panelTabs.forEach((tab) => tab.addEventListener('click', () => activatePanel(tab.dataset.panelTab)));
     const initialHash = window.location.hash.replace('#', '');
@@ -616,12 +754,15 @@
         }
     });
     openSigningChoice?.addEventListener('click', () => setModalOpen(true));
+    submitForSigning?.addEventListener('click', submitDraftForSigning);
     closeSigningModal?.addEventListener('click', () => setModalOpen(false));
     [signatureAction, sealAction, finalPdfPreview].forEach((link) => {
         link?.addEventListener('click', (event) => {
             if (link.getAttribute('aria-disabled') === 'true') {
                 event.preventDefault();
                 setMessage('That action is locked until the contract reaches the correct signing state.', 'error');
+            } else if (link === sealAction) {
+                applyCompanySeal(event);
             }
         });
     });

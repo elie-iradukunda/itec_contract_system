@@ -1,42 +1,100 @@
 <?php
-$basePath = '/itec_contract_system';
-$assetVersion = time();
-$pageTitle = 'Digital Signing';
-$pageHeading = 'Digital Signing Flow';
-$pageEyebrow = 'client execution path';
-$pageLead = 'Guide the client through a clear digital signature step, then preserve the contract body before the company finishes execution.';
+require_once dirname(__DIR__) . '/components/ui.php';
+
+$contractId = (int) ($contract_id ?? 1);
+$title = 'Digital Signing';
 $activeNav = 'contracts';
-$headerMeta = 'signing workspace';
+$headerMeta = 'client execution';
+$pageTitle = 'Digital Signing';
+$pageHeading = 'Digital Signing';
+$pageEyebrow = 'client execution path';
+$pageLead = 'Choose a signing path for the locked client copy.';
 $pageActions = [
-    '<a class="button ghost" href="' . $basePath . '/views/clients/portal.php">Back to Client Portal</a>',
-    '<a id="digitalFlowSignLink" class="button" href="' . $basePath . '/views/signatures/sign.php">Open Signature Capture</a>'
+    '<a class="button ghost" href="' . BASE_URL . '/clients/portal">Back to Client Portal</a>',
+    '<a class="button" href="' . BASE_URL . '/contracts/' . $contractId . '/editor#signing">Open Contract</a>',
 ];
-$pageScripts = [];
 
 ob_start();
 ?>
-<section class="content-split">
-    <div class="surface surface-pad">
-        <h2>Client signing steps</h2>
-        <ul class="check-list">
-            <li>The client reviews the final draft in the portal.</li>
-            <li>The client signs inside the designated signature block.</li>
-            <li>The backend records signer identity, timestamp, IP, and document hash.</li>
-            <li>The contract body becomes permanently read-only.</li>
-        </ul>
-        <div class="signature-pad" id="digitalFlowPreview">Client signature capture area</div>
+<section class="signing-stage surface">
+    <div class="signing-stage-copy">
+        <p>awaiting client</p>
+        <h2>Client execution workspace</h2>
+        <span>The body is frozen. The client can sign digitally or complete the hard-copy path without changing contract text.</span>
     </div>
+    <div class="signing-stage-state">
+        <strong>After client signs</strong>
+        <span>Company execution</span>
+    </div>
+</section>
+
+<section class="content-split">
+    <div class="surface surface-pad execution-card">
+        <div class="section-head compact no-border"><div><p>digital signature</p><h2>Portal signing</h2></div></div>
+        <p class="muted-copy">By signing, the client confirms the locked contract body is accepted exactly as presented.</p>
+        <form id="digitalSignForm" class="form-grid" data-sign-url="<?= BASE_URL ?>/api/contracts/<?= $contractId ?>/sign">
+            <!-- Feature E4: this form records the client signature and keeps the body locked. -->
+            <input type="hidden" name="role" value="client">
+            <label class="field-span">
+                <span>Signer email</span>
+                <input type="email" name="signer_id" value="client@itec.local" required>
+            </label>
+            <label class="field-span">
+            <span>Full legal name</span>
+                <input type="text" name="typed_signature" placeholder="Full legal name" required>
+            </label>
+            <div class="signature-pad signature-capture">
+                <strong>Signature capture</strong>
+                <span>The signature is recorded with the signing action.</span>
+            </div>
+            <div class="field-span form-actions">
+                <button class="button" type="submit">Sign Digitally</button>
+                <span id="digitalSignMessage" class="muted-copy"></span>
+            </div>
+        </form>
+    </div>
+
     <aside class="page-stack">
-        <div class="surface surface-pad">
-            <h2>Consent text</h2>
-            <p class="muted-copy">By continuing, the signer agrees that the digital signature should be attached to the contract exactly as presented in the locked document state.</p>
+        <div class="surface surface-pad execution-card">
+            <div class="section-head compact no-border"><div><p>hard copy</p><h2>Print and upload</h2></div></div>
+            <p class="muted-copy">Download the print-ready PDF, sign it physically, then staff can upload the scan.</p>
+            <div class="form-actions">
+                <a class="button ghost" href="<?= BASE_URL ?>/contracts/<?= $contractId ?>/print-pdf" target="_blank" rel="noopener">Download PDF</a>
+                <a class="button" href="<?= BASE_URL ?>/contracts/<?= $contractId ?>/upload-hard-copy">Upload scan</a>
+            </div>
         </div>
-        <div class="surface surface-pad">
-            <h2>Next company step</h2>
-            <p class="muted-copy">After client signing, the company representative adds the authorized signature and the certified seal only.</p>
+        <div class="surface surface-pad execution-card">
+            <div class="section-head compact no-border"><div><p>after signing</p><h2>Company handoff</h2></div></div>
+            <div class="handoff-list">
+                <span><?= ui_icon('lock-fill') ?> Body remains frozen</span>
+                <span><?= ui_icon('envelope') ?> Company representative receives the next action</span>
+                <span><?= ui_icon('fingerprint') ?> Signature hash is stored in audit trail</span>
+            </div>
         </div>
     </aside>
 </section>
+
+<script>
+document.getElementById('digitalSignForm')?.addEventListener('submit', async function (event) {
+    event.preventDefault();
+    const message = document.getElementById('digitalSignMessage');
+    message.textContent = 'Signing contract...';
+
+    try {
+        const response = await fetch(this.dataset.signUrl, {
+            method: 'POST',
+            body: new FormData(this),
+            headers: { Accept: 'application/json' }
+        });
+        const result = await (window.ContractUi ? ContractUi.responseJson(response) : response.json());
+        if (!response.ok || result.success === false) throw new Error(result.message || result.error || 'Signing failed');
+        message.textContent = 'Signed successfully. Redirecting to execution view...';
+        window.location.href = '<?= BASE_URL ?>/contracts/<?= $contractId ?>/editor#signing';
+    } catch (error) {
+        message.textContent = error.message || 'Signing failed';
+    }
+});
+</script>
 <?php
-$pageContent = ob_get_clean();
-require __DIR__ . '/../layouts/app.php';
+$content = ob_get_clean();
+require dirname(__DIR__) . '/layouts/app.php';

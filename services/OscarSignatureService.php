@@ -3,6 +3,7 @@
 namespace Services;
 
 use Core\Database;
+
 class OscarSignatureService
 {
     private $db;
@@ -140,7 +141,7 @@ class OscarSignatureService
     /**
      * Signs a document hash using the system's private key.
      */
-   public function signDocument($contractId, $signerId, $filePath = null)
+   public function signDocument($contractId, $signerId, $roleOrFilePath = null, $filePath = null)
 {
     $stmt = $this->db->prepare("SELECT id, file_path FROM contracts WHERE id = ?");
     $stmt->execute([$contractId]);
@@ -150,7 +151,8 @@ class OscarSignatureService
         return ['success' => false, 'error' => 'Contract not found in database.'];
     }
     
-    $targetPath = $filePath ?? $contract['file_path'];
+    $role = in_array($roleOrFilePath, ['client', 'company_rep'], true) ? $roleOrFilePath : $this->signerRole($signerId);
+    $targetPath = $this->resolvePath($filePath ?? ($roleOrFilePath && $roleOrFilePath !== $role ? $roleOrFilePath : $contract['file_path']));
 
     $documentHash = $this->generateHash($targetPath);
     
@@ -174,13 +176,14 @@ class OscarSignatureService
     $signatureBlob = base64_encode($signature);
     
     $sql = "INSERT INTO doc_signatures (contract_id, signer_id, signer_role, signature_blob, public_key, doc_hash, signature_algorithm, signed_at) 
-            VALUES (:contract_id, :signer_id, 'client', :signature_blob, :public_key, :doc_hash, 'SHA256', NOW())";
+            VALUES (:contract_id, :signer_id, :signer_role, :signature_blob, :public_key, :doc_hash, 'SHA256', NOW())";
     
     $stmt = $this->db->prepare($sql);
     
     $result = $stmt->execute([
         'contract_id' => $contractId,
         'signer_id' => $signerId,
+        'signer_role' => $role,
         'signature_blob' => $signatureBlob,
         'public_key' => $this->getPublicKey(),
         'doc_hash' => $documentHash
@@ -219,7 +222,7 @@ class OscarSignatureService
     $contractStmt = $this->db->prepare("SELECT file_path FROM contracts WHERE id = ?");
     $contractStmt->execute([$contractId]);
     $contract = $contractStmt->fetch();
-    $file_path = $contract['file_path'];
+    $file_path = $this->resolvePath($contract['file_path'] ?? '');
      
     if (!$contract || !file_exists($file_path)) {
         return [
@@ -291,5 +294,35 @@ class OscarSignatureService
         }
         
         return $signatures;
+    }
+
+    public function getAllSignatures($contractId)
+    {
+        $sql = "SELECT id, signer_id, signer_role, doc_hash, signed_at
+                FROM doc_signatures
+                WHERE contract_id = ?
+                ORDER BY signed_at ASC";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([$contractId]);
+
+        return $stmt->fetchAll();
+    }
+
+    private function resolvePath($path)
+    {
+        $path = str_replace('\\', '/', (string) $path);
+        if ($path === '') {
+            return '';
+        }
+
+        return preg_match('/^[A-Za-z]:\//', $path) || str_starts_with($path, '/')
+            ? $path
+            : dirname(__DIR__) . '/' . ltrim($path, '/');
+    }
+
+    private function signerRole($signerId)
+    {
+        return stripos((string) $signerId, 'client') !== false ? 'client' : 'company_rep';
     }
 }

@@ -14,39 +14,150 @@ class Contract
         $this->db = Database::getInstance()->getConnection();
     }
 
-    public function findAll()
+    public function findAll($filters = [])
     {
-        $stmt = $this->db->query("SELECT * FROM contracts");
+        $sql = "
+            SELECT c.*, COALESCE(cl.company_name, c.client_name) AS company_name,
+                   COALESCE(cl.name, c.client_name) AS client_name,
+                   COALESCE(cl.email, c.client_email) AS client_email,
+                   u.name AS created_by_name
+            FROM contracts c
+            LEFT JOIN clients cl ON cl.id = c.client_id
+            LEFT JOIN users u ON u.id = c.created_by
+            WHERE 1 = 1
+        ";
+        $params = [];
+
+        if (!empty($filters['status'])) {
+            $sql .= " AND c.signing_state = ?";
+            $params[] = $filters['status'];
+        }
+
+        if (!empty($filters['search'])) {
+            $sql .= " AND (c.title LIKE ? OR c.description LIKE ? OR cl.company_name LIKE ? OR cl.name LIKE ?)";
+            $term = '%' . $filters['search'] . '%';
+            array_push($params, $term, $term, $term, $term);
+        }
+
+        $sql .= " ORDER BY c.updated_at DESC, c.id DESC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     public function find($id)
     {
-        $stmt = $this->db->prepare("SELECT * FROM contracts WHERE id = ?");
-        $stmt->execute([$id]);
+        $stmt = $this->db->prepare("
+            SELECT c.*, COALESCE(cl.company_name, c.client_name) AS company_name,
+                   COALESCE(cl.name, c.client_name) AS client_name,
+                   COALESCE(cl.email, c.client_email) AS client_email,
+                   u.name AS created_by_name
+            FROM contracts c
+            LEFT JOIN clients cl ON cl.id = c.client_id
+            LEFT JOIN users u ON u.id = c.created_by
+            WHERE c.id = ?
+        ");
+        $stmt->execute([(int) $id]);
+
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
-    
-
-    public function saveEditorContent($id, $content)
+    public function createDraft(array $data)
     {
-        // Save CKEditor content and rebuild the current DOCX file.
+        $this->ensureDefaultParties();
+
+        $stmt = $this->db->prepare("
+            INSERT INTO contracts (client_id, client_name, client_email, title, document_type, description, signing_state, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, 'DRAFT', ?)
+        ");
+        $stmt->execute([
+            (int) ($data['client_id'] ?? 1),
+            $data['client_name'] ?? $data['company_name'] ?? 'Demo Client',
+            $data['client_email'] ?? 'client@itec.local',
+            trim($data['title'] ?? '') ?: 'Untitled Contract',
+            $data['document_type'] ?? $data['type'] ?? 'Service Agreement',
+            $data['description'] ?? null,
+            (int) ($data['created_by'] ?? 1),
+        ]);
+
+        $id = (int) $this->db->lastInsertId();
+        $this->saveEditorContent($id, $data['content'] ?? '<p></p>', false);
+
+        return $this->find($id);
+    }
+
+    public function updateContract($id, array $data)
+    {
+        $stmt = $this->db->prepare("
+            UPDATE contracts
+            SET title = COALESCE(?, title),
+                document_type = COALESCE(?, document_type),
+                description = COALESCE(?, description),
+                updated_at = NOW()
+            WHERE id = ?
+        ");
+        $stmt->execute([
+            $data['title'] ?? null,
+            $data['document_type'] ?? $data['type'] ?? null,
+            $data['description'] ?? null,
+            (int) $id,
+        ]);
+
+        return $this->find($id);
+    }
+
+    public function delete($id)
+    {
+        $stmt = $this->db->prepare("DELETE FROM contracts WHERE id = ?");
+        return $stmt->execute([(int) $id]);
+    }
+
+    public function getEditorData($id)
+    {
+        $contract = $this->find($id);
+        if (!$contract) {
+            return null;
+        }
+
+        $folder = $this->contractFolder($id);
+        $htmlFile = $folder . '/contract.html';
+        $textFile = $folder . '/contract.txt';
+        $docxFile = $this->absolutePath($contract['file_path'] ?: $this->relativeStoragePath($folder . '/contract.docx'));
+
+        $contract['content'] = $this->loadEditorHtml($htmlFile, $textFile, $docxFile);
+        $contract['file_path'] = $contract['file_path'] ?: $this->relativeStoragePath($docxFile);
+
+        return $contract;
+    }
+
+    public function saveEditorContent($id, $content, $trackChange = true)
+    {
+        $this->ensureBodyEditable($id);
+
         $folder = $this->ensureContractFolder($id);
+        $htmlFile = $folder . '/contract.html';
+        $oldHtml = file_exists($htmlFile) ? file_get_contents($htmlFile) : '';
         $html = $this->cleanEditorHtml($content);
-        file_put_contents($folder . '/contract.html', $html);
+
+        file_put_contents($htmlFile, $html);
         file_put_contents($folder . '/contract.txt', $this->htmlToPlainText($html));
 
         $path = $folder . '/contract.docx';
         $this->writeDocx($path, $html);
         $this->updateContractFilePath($id, $path);
 
+        if ($trackChange && trim($oldHtml) !== trim($html)) {
+            $this->recordTrackedChange($id, $oldHtml, $html);
+        }
+
         return $path;
     }
 
     public function saveEditorFile($id, $file)
     {
-        // Save an uploaded .docx file from the browser.
+        $this->ensureBodyEditable($id);
+
         if (strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)) !== 'docx') {
             throw new \Exception('Only .docx files can be saved');
         }
@@ -61,37 +172,79 @@ class Contract
         file_put_contents($folder . '/contract.html', $html);
         file_put_contents($folder . '/contract.txt', $this->htmlToPlainText($html));
         $this->updateContractFilePath($id, $path);
+        $this->recordTrackedChange($id, '', $html);
 
         return $path;
     }
 
     public function documentPath($id)
     {
-        // Return the current DOCX path for downloads and version snapshots.
         return $this->contractFolder($id) . '/contract.docx';
     }
 
-    private function safeFind($id)
+    public function absolutePath($path)
     {
-        // Avoid editor failure when the database row is not ready yet.
-        try {
-            return $this->find($id) ?: [];
-        } catch (\Throwable $error) {
-            return [];
+        $path = str_replace('\\', '/', (string) $path);
+        if ($path === '') {
+            return '';
+        }
+
+        return preg_match('/^[A-Za-z]:\//', $path) || str_starts_with($path, '/')
+            ? $path
+            : dirname(__DIR__) . '/' . ltrim($path, '/');
+    }
+
+    private function ensureDefaultParties()
+    {
+        $this->db->exec("
+            INSERT INTO users (id, name, email, password, role)
+            VALUES (1, 'Demo Staff', 'staff@itec.local', '', 'staff')
+            ON DUPLICATE KEY UPDATE name = VALUES(name)
+        ");
+        $this->db->exec("
+            INSERT INTO clients (id, name, email, company_name)
+            VALUES (1, 'Demo Client', 'client@itec.local', 'Demo Client Company')
+            ON DUPLICATE KEY UPDATE name = VALUES(name), email = VALUES(email)
+        ");
+    }
+
+    private function recordTrackedChange($id, $oldHtml, $newHtml)
+    {
+        // Feature E3: every save batch creates a reviewer-visible tracked change row.
+        $oldText = $this->htmlToPlainText($oldHtml);
+        $newText = $this->htmlToPlainText($newHtml);
+
+        if ($oldText === $newText) {
+            return;
+        }
+
+        $stmt = $this->db->prepare("
+            INSERT INTO doc_tracked_changes (contract_id, doc_id, author_id, original_text, new_text, status, changed_at)
+            VALUES (?, ?, ?, ?, ?, 'pending', NOW())
+        ");
+        $stmt->execute([(int) $id, (int) $id, 1, $oldText, $newText]);
+    }
+
+    private function ensureBodyEditable($id)
+    {
+        // Feature E5: backend body lock mirrors the editor read-only state after signing starts.
+        $stmt = $this->db->prepare("SELECT signing_state FROM contracts WHERE id = ?");
+        $stmt->execute([(int) $id]);
+        $state = strtoupper((string) $stmt->fetchColumn());
+
+        if ($state && $state !== 'DRAFT') {
+            throw new \Exception('The contract body is locked after signing starts.');
         }
     }
 
     private function contractFolder($id)
     {
-        // Build the contract storage folder path.
-        return __DIR__ . '/../storage/contracts/' . (int) $id;
+        return dirname(__DIR__) . '/storage/contracts/' . (int) $id;
     }
 
     private function ensureContractFolder($id)
     {
-        // Create the contract storage folder when missing.
         $folder = $this->contractFolder($id);
-
         if (!is_dir($folder)) {
             mkdir($folder, 0777, true);
         }
@@ -101,13 +254,11 @@ class Contract
 
     private function isValidDocx($path)
     {
-        // Check for the ZIP header used by real DOCX files.
         return file_exists($path) && file_get_contents($path, false, null, 0, 2) === 'PK';
     }
 
     private function loadEditorHtml($htmlFile, $textFile, $docxFile)
     {
-        // Load the best available source for CKEditor.
         if (file_exists($htmlFile)) {
             return file_get_contents($htmlFile);
         }
@@ -121,7 +272,6 @@ class Contract
 
     private function cleanEditorHtml($content)
     {
-        // Keep only the formatting CKEditor is configured to produce.
         $allowed = '<p><br><strong><b><em><i><u><s><span><div><ul><ol><li><h1><h2><h3><h4><h5><h6><blockquote><a><table><thead><tbody><tfoot><tr><td><th><pre><code><sup><sub><hr><img>';
         $html = strip_tags((string) $content, $allowed);
         $html = preg_replace('/\s+on[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $html);
@@ -132,7 +282,6 @@ class Contract
 
     private function docxToHtml($path)
     {
-        // Extract readable text from a DOCX file for CKEditor.
         if (!$this->isValidDocx($path)) {
             return '<p></p>';
         }
@@ -151,7 +300,6 @@ class Contract
 
     private function writeDocx($path, $html)
     {
-        // Write a lightweight DOCX package from the editor text.
         $this->writeZip($path, [
             '[Content_Types].xml' => $this->contentTypesXml(),
             '_rels/.rels' => $this->rootRelsXml(),
@@ -161,7 +309,6 @@ class Contract
 
     private function documentXml($text)
     {
-        // Convert plain text lines into Word paragraphs.
         $paragraphs = preg_split('/\R/', trim($text));
         if (!$paragraphs || $paragraphs === ['']) {
             $paragraphs = [''];
@@ -181,7 +328,6 @@ class Contract
 
     private function htmlToPlainText($html)
     {
-        // Flatten editor HTML into text for TXT and DOCX storage.
         $html = preg_replace('/<\/(td|th)>/i', "\t", (string) $html);
         $html = preg_replace('/<(\/p|br|hr|\/div|\/li|\/h[1-6]|\/blockquote|\/tr)>/i', "\n", $html);
         $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -193,7 +339,6 @@ class Contract
 
     private function plainTextToHtml($text)
     {
-        // Convert stored plain text into editor paragraphs.
         $lines = preg_split('/\R{2,}/', trim((string) $text));
         if (!$lines || $lines === ['']) {
             return '<p></p>';
@@ -206,17 +351,12 @@ class Contract
 
     private function updateContractFilePath($id, $path)
     {
-        // Keep the contract row pointed at the current file when it exists.
-        try {
-            $stmt = $this->db->prepare("UPDATE contracts SET file_path = ? WHERE id = ?");
-            $stmt->execute([$this->relativeStoragePath($path), (int) $id]);
-        } catch (\Throwable $error) {
-        }
+        $stmt = $this->db->prepare("UPDATE contracts SET file_path = ?, updated_at = NOW() WHERE id = ?");
+        $stmt->execute([$this->relativeStoragePath($path), (int) $id]);
     }
 
     private function relativeStoragePath($path)
     {
-        // Store portable paths in the database.
         return 'storage/contracts/' . basename(dirname($path)) . '/' . basename($path);
     }
 
@@ -240,16 +380,15 @@ class Contract
 
     private function writeZip($path, array $files)
     {
-        // Create a minimal ZIP package without requiring PHP ZipArchive.
         $localData = '';
         $centralData = '';
         [$dosTime, $dosDate] = $this->dosTimestamp();
 
         foreach ($files as $name => $contents) {
             $offset = strlen($localData);
-            $nameLength = strlen($name);
             $size = strlen($contents);
             $crc = hexdec(hash('crc32b', $contents));
+            $nameLength = strlen($name);
 
             $localData .= pack('VvvvvvVVVvv', 0x04034b50, 20, 0, 0, $dosTime, $dosDate, $crc, $size, $size, $nameLength, 0);
             $localData .= $name . $contents;
@@ -268,7 +407,6 @@ class Contract
 
     private function zipEntry($path, $entryName)
     {
-        // Read one file from a ZIP package using the central directory.
         $data = file_get_contents($path);
         $eocdOffset = strrpos($data, "PK\x05\x06");
         if ($eocdOffset === false) {
@@ -295,7 +433,6 @@ class Contract
 
     private function zipLocalEntry($data, array $header)
     {
-        // Decode stored or deflated ZIP file contents.
         $offset = $header['localOffset'];
         if (substr($data, $offset, 4) !== "PK\x03\x04") {
             return null;
@@ -319,7 +456,6 @@ class Contract
 
     private function dosTimestamp()
     {
-        // Convert current time to the ZIP date/time fields.
         $now = getdate();
         $time = ($now['hours'] << 11) | ($now['minutes'] << 5) | (int) ($now['seconds'] / 2);
         $date = (($now['year'] - 1980) << 9) | ($now['mon'] << 5) | $now['mday'];

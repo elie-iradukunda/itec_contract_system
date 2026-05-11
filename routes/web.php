@@ -19,8 +19,10 @@ $router->get('/contracts/create', [\Controllers\ContractController::class, 'crea
 $router->post('/contracts/store', [\Controllers\ContractController::class, 'store']);
 $router->get('/contracts/show/{id}', [\Controllers\ContractController::class, 'show']);
 $router->get('/contracts/edit/{id}', [\Controllers\ContractController::class, 'edit']);
+$router->get('/contracts/{id}/edit', [\Controllers\ContractController::class, 'edit']);
 $router->post('/contracts/update/{id}', [\Controllers\ContractController::class, 'update']);
 $router->get('/contracts/review/{id}', [\Controllers\ContractController::class, 'review']);
+$router->get('/contracts/{id}/review', [\Controllers\ContractController::class, 'review']);
 $router->get('/contracts/readonly/{id}', [\Controllers\ContractController::class, 'readonly']);
 $router->get('/contracts/view/{id}', [\Controllers\ContractController::class, 'viewFinal']);
 $router->get('/contracts/execution-status/{id}', [\Controllers\ContractController::class, 'executionStatus']);
@@ -67,6 +69,8 @@ $router->get('/contracts/{id}/changes-panel', [\Controllers\ContractController::
 $router->get('/contracts/{id}/signing-choice', [\Controllers\SignatureController::class, 'showChoice']);
 $router->post('/contracts/{id}/signing-choice', [\Controllers\SignatureController::class, 'handleChoice']);
 $router->get('/contracts/{id}/sign-digitally', [\Controllers\SignatureController::class, 'signPage']);
+$router->get('/contracts/sign/{id}', [\Controllers\SignatureController::class, 'signPage']);
+$router->get('/contracts/sign-company/{id}', [\Controllers\ContractController::class, 'readonly']);
 $router->get('/contracts/{id}/print-pdf', [\Controllers\ContractController::class, 'generatePrintPDF']);
 $router->post('/contracts/{id}/upload-signed-copy', [\Controllers\UploadController::class, 'uploadSignedCopy']);
 $router->get('/contracts/{id}/upload-hard-copy', [\Controllers\UploadController::class, 'uploadHardCopyPage']);
@@ -77,6 +81,7 @@ $router->get('/contracts/{id}/upload-hard-copy', [\Controllers\UploadController:
 $router->get('/contracts/{id}/status', [\Controllers\ContractController::class, 'getStatus']);
 $router->post('/contracts/{id}/distribute', [\Controllers\ContractController::class, 'distribute']);
 $router->get('/access/{token}', [\Controllers\ContractController::class, 'tokenAccess']);
+$router->get('/view/{token}', [\Controllers\ContractController::class, 'tokenAccess']);
 $router->get('/contracts/{id}/distributions', [\Controllers\ContractController::class, 'getDistributions']);
 
 // ============================================

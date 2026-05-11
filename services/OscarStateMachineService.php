@@ -48,7 +48,11 @@ class OscarStateMachineService
     
     private function getClientEmail()
     {
-        // Get from doc_signing_order or use default
+        $contract = $this->getContractDetails();
+        if (!empty($contract['client_email'])) {
+            return $contract['client_email'];
+        }
+
         $query = "SELECT user_id FROM doc_signing_order WHERE contract_id = ? AND party_role = 'client' LIMIT 1";
         $stmt = $this->db->prepare($query);
         $stmt->execute([$this->contractId]);
@@ -125,7 +129,9 @@ class OscarStateMachineService
         return true;
         
     } catch (Exception $e) {
-        $this->db->rollBack();
+        if ($this->db->inTransaction()) {
+            $this->db->rollBack();
+        }
         throw $e;
     }
 }
@@ -150,7 +156,11 @@ class OscarStateMachineService
         return;
     }
     
+<<<<<<< HEAD
     $baseUrl = "http://" . ($_SERVER['HTTP_HOST'] ?? 'localhost') . "/".BASE_URL;
+=======
+    $baseUrl = defined('BASE_URL') ? BASE_URL : '/itec_contract_system';
+>>>>>>> 958ad639205705ea1da6d0db67e6337b89b4f856
     $companyEmail = getenv('SMTP_FROM_EMAIL') ?: 'company@itec.com';
     $clientEmail = $additionalData['client_email'] ?? $this->getClientEmail();
     
@@ -304,7 +314,11 @@ private function sendContractFullyExecutedEmail($contract, $clientEmail, $baseUr
     return [
         'token' => $token,
         'expires_at' => $expiresAt,
+<<<<<<< HEAD
         'sign_url' => "{$protocol}://{$host}/itec_contract_system/access/{$token}"
+=======
+        'sign_url' => (defined('BASE_URL') ? BASE_URL : '/itec_contract_system') . "/access/{$token}"
+>>>>>>> 958ad639205705ea1da6d0db67e6337b89b4f856
     ];
 }
 

@@ -1,38 +1,41 @@
 <?php
-$basePath = '/itec_contract_system';
-$assetVersion = time();
+require_once dirname(__DIR__) . '/components/ui.php';
+
+$contractId = (int) ($contract_id ?? 1);
+$title = 'Upload Signed Copy';
+$activeNav = 'contracts';
+$headerMeta = 'hard copy workflow';
 $pageTitle = 'Upload Signed Copy';
 $pageHeading = 'Upload Returned Hard Copy';
 $pageEyebrow = 'staff hard copy workflow';
-$pageLead = 'Use this staff page when the client signed outside the portal and the scanned copy needs to be attached back into the contract record.';
-$activeNav = 'contracts';
-$headerMeta = 'hard copy workflow';
+$pageLead = 'Upload the returned signed scan so the contract can move to company execution.';
 $pageActions = [
-    '<a class="button ghost" href="' . $basePath . '/contracts">Back to Contracts</a>'
+    '<a class="button ghost" href="' . BASE_URL . '/contracts/' . $contractId . '/editor#signing">Back to Contract</a>',
 ];
 
 ob_start();
 ?>
 <section class="content-split">
-    <form class="surface form-surface form-grid" action="<?= $basePath ?>/contracts/1/upload-signed" method="post" enctype="multipart/form-data">
+    <form class="surface form-surface form-grid" action="<?= BASE_URL ?>/contracts/<?= $contractId ?>/upload-signed-copy" method="post" enctype="multipart/form-data">
+        <!-- Feature E4: upload attaches the returned scan and advances the contract to company action. -->
         <label class="field-span">
             <span>Signed scan</span>
-            <div class="upload-dropzone">Drop PDF, PNG, or JPG here</div>
+            <input type="file" name="signed_copy" accept=".pdf,.png,.jpg,.jpeg" required>
         </label>
         <label>
             <span>Received date</span>
-            <input type="date" name="received_at">
+            <input type="date" name="received_at" value="<?= date('Y-m-d') ?>">
         </label>
         <label>
             <span>Checked by</span>
-            <input type="text" name="checked_by" value="Elie">
+            <input type="text" name="checked_by" value="Staff reviewer">
         </label>
         <label class="field-span">
             <span>Verification notes</span>
             <textarea name="notes" placeholder="Confirm signature clarity, page count, and attachment quality."></textarea>
         </label>
         <div class="field-span form-actions">
-            <button class="button ghost" type="button">Validate Scan</button>
+            <a class="button ghost" href="<?= BASE_URL ?>/contracts/<?= $contractId ?>/print-pdf" target="_blank" rel="noopener">Open print PDF</a>
             <button class="button" type="submit">Attach Signed Copy</button>
         </div>
     </form>
@@ -43,7 +46,7 @@ ob_start();
             <ul class="check-list">
                 <li>Every page is legible and in the correct order.</li>
                 <li>The signed page matches the final reviewed version.</li>
-                <li>The file will be linked to the right contract record.</li>
+                <li>The file belongs to contract #<?= $contractId ?>.</li>
             </ul>
         </div>
         <div class="surface surface-pad">
@@ -57,5 +60,5 @@ ob_start();
     </div>
 </section>
 <?php
-$pageContent = ob_get_clean();
-require __DIR__ . '/../layouts/app.php';
+$content = ob_get_clean();
+require dirname(__DIR__) . '/layouts/app.php';

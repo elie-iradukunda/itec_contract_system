@@ -1,153 +1,224 @@
 <?php
-$basePath = BASE_URL;
-$editor_config = $editor_config ?? [
+require_once __DIR__ . '/ui.php';
+
+$editor_config = array_merge([
     'contract_id' => 0,
-    'content' => 'Start typing your contract here...',
-    'height' => '500px'
+    'title' => 'New Contract',
+    'content' => '<p>Start drafting the contract here...</p>',
+    'signing_state' => 'DRAFT',
+    'readonly' => false,
+    'show_side_panel' => true,
+], $editor_config ?? []);
+
+$contractId = (int) $editor_config['contract_id'];
+$isNew = $contractId === 0;
+$state = strtoupper($editor_config['signing_state'] ?? 'DRAFT');
+$content = $editor_config['content'] ?? '';
+$base = BASE_URL;
+
+$jsConfig = [
+    'contractId' => $contractId,
+    'isNew' => $isNew,
+    'signingState' => $state,
+    'tinyMceBaseUrl' => $base . '/public/vendor/tinymce',
+    'createUrl' => $base . '/api/contracts',
+    'saveUrl' => $isNew ? $base . '/api/contracts' : $base . '/contracts/' . $contractId . '/save',
+    'editUrlTemplate' => $base . '/contracts/__ID__/editor',
+    'statusUrl' => $isNew ? null : $base . '/contracts/' . $contractId . '/status',
+    'versionsUrl' => $isNew ? null : $base . '/contracts/' . $contractId . '/versions',
+    'restoreUrlTemplate' => $base . '/contracts/' . $contractId . '/versions/__VERSION__/restore',
+    'downloadUrlTemplate' => $base . '/contracts/' . $contractId . '/versions/__VERSION__/download',
+    'changesUrl' => $isNew ? null : $base . '/contracts/' . $contractId . '/changes',
+    'acceptChangeUrlTemplate' => $base . '/contracts/' . $contractId . '/changes/__CHANGE__/accept',
+    'rejectChangeUrlTemplate' => $base . '/contracts/' . $contractId . '/changes/__CHANGE__/reject',
+    'signingChoiceUrl' => $isNew ? null : $base . '/contracts/' . $contractId . '/signing-choice',
+    'submitUrl' => $isNew ? null : $base . '/api/contracts/' . $contractId . '/submit',
+    'printPdfUrl' => $isNew ? null : $base . '/contracts/' . $contractId . '/print-pdf',
+    'uploadSignedUrl' => $isNew ? null : $base . '/api/contracts/' . $contractId . '/upload-hard-copy',
+    'signUrl' => $isNew ? null : $base . '/contracts/' . $contractId . '/sign-digitally',
+    'sealUrl' => $isNew ? null : $base . '/api/contracts/' . $contractId . '/seal',
+    'finalPdfUrl' => $isNew ? null : $base . '/contracts/final-pdf/' . $contractId,
+    'distributeUrl' => $isNew ? null : $base . '/api/contracts/' . $contractId . '/distribute',
+    'accessUrlTemplate' => $base . '/view/__TOKEN__',
 ];
-$contractId = $editor_config['contract_id'];
-$editorContent = htmlspecialchars($editor_config['content'], ENT_QUOTES, 'UTF-8');
-$height = $editor_config['height'];
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Contract Editor</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <!-- Trix CSS -->
-    <link rel="stylesheet" type="text/css" href="https://unpkg.com/trix@2.0.8/dist/trix.css">
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    
-    
-
-
-<main class="container-main">
-    <div class="container-fluid px-0">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <div>
-                    <i class="bi bi-file-text me-2"></i>
-                    <strong>Contract Editor</strong>
-                    <span class="badge bg-secondary ms-2" id="contractIdBadge">ID: <?= $contractId ?: 'New' ?></span>
-                </div>
-                <button type="button" class="btn btn-sm btn-primary" id="saveButton">
-                    <i class="bi bi-save"></i> Save Contract
-                </button>
-            </div>
-            <div class="card-body">
-                <input id="contractContent" type="hidden" name="content" value="<?= $editorContent ?>">
-                <trix-editor input="contractContent" class="trix-content"></trix-editor>
-            </div>
-            <div class="card-footer text-muted small text-end" id="saveMessage">
-                Ready to edit
-            </div>
-        </div>
-    </div>
-</main>
-
-<!-- Trix JS -->
 
 <script>
-const BASE_URL = '<?= $basePath ?>';
-const CONTRACT_ID = <?= (int) $contractId ?>;
-const IS_NEW_CONTRACT = CONTRACT_ID === 0;
-
-let isSaving = false;
-let saveTimeout = null;
-let autoSaveInterval = null;
-
-function getContent() {
-    const input = document.getElementById('contractContent');
-    return input ? input.value : '';
-}
-
-async function saveDocument() {
-    if (isSaving) return;
-    
-    const content = getContent();
-    
-    isSaving = true;
-    const saveBtn = document.getElementById('saveButton');
-    const saveMsg = document.getElementById('saveMessage');
-    
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
-    saveMsg.innerHTML = 'Saving...';
-    
-    try {
-        let url, method, body;
-        
-        if (IS_NEW_CONTRACT) {
-            url = `${BASE_URL}/api/contracts`;
-            method = 'POST';
-            body = JSON.stringify({ title: 'New Contract', content: content });
-        } else {
-            url = `${BASE_URL}/api/contracts/${CONTRACT_ID}/save`;
-            method = 'POST';
-            body = JSON.stringify({ content: content });
-        }
-        
-        const response = await fetch(url, {
-            method: method,
-            headers: { 'Content-Type': 'application/json' },
-            body: body
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            saveMsg.innerHTML = `Saved at ${new Date().toLocaleTimeString()}`;
-            
-            if (IS_NEW_CONTRACT && data.contract_id) {
-                window.location.href = `${BASE_URL}/contracts/${data.contract_id}/edit`;
-            }
-        } else {
-            saveMsg.innerHTML = 'Save failed: ' + (data.message || 'Unknown error');
-        }
-    } catch (error) {
-        console.error('Save error:', error);
-        saveMsg.innerHTML = 'Network error while saving';
-    } finally {
-        isSaving = false;
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = '<i class="bi bi-save"></i> Save Contract';
-        
-        setTimeout(() => {
-            if (saveMsg.innerHTML !== 'Ready to edit') {
-                saveMsg.innerHTML = 'Ready to edit';
-            }
-        }, 3000);
-    }
-}
-
-// Auto-save on change
-document.addEventListener('trix-change', function() {
-    if (saveTimeout) clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(() => {
-        if (!IS_NEW_CONTRACT) {
-            saveDocument();
-        }
-    }, 3000);
-});
-
-// Auto-save every 30 seconds for existing contracts
-if (!IS_NEW_CONTRACT) {
-    autoSaveInterval = setInterval(() => {
-        if (!isSaving) {
-            saveDocument();
-        }
-    }, 30000);
-}
-
-// Manual save button
-document.getElementById('saveButton').addEventListener('click', saveDocument);
-
-// Cleanup
-window.addEventListener('beforeunload', () => {
-    if (autoSaveInterval) clearInterval(autoSaveInterval);
-    if (saveTimeout) clearTimeout(saveTimeout);
-});
+    window.contractEditorConfig = <?= json_encode($jsConfig, JSON_UNESCAPED_SLASHES) ?>;
 </script>
+
+<section class="titlebar">
+    <div>
+        <p><?= $isNew ? 'new draft' : 'contract editor' ?></p>
+        <h1><?= ui_e($editor_config['title']) ?></h1>
+    </div>
+    <span id="statusBadge" class="badge <?= ui_status_class($state) ?>"><?= ui_e(ui_status_label($state)) ?></span>
+</section>
+
+<div id="readOnlyBanner" class="warning <?= $state === 'DRAFT' ? 'hidden' : '' ?>">
+    <?= ui_icon('lock-fill') ?> Body editing is locked because this contract has entered execution.
+</div>
+
+<div id="bodyLockBanner" class="lock-banner <?= $state === 'DRAFT' ? 'hidden' : '' ?>">
+    <strong>Body lock active</strong>
+    <span id="bodyLockMessage">Only signature, seal, and distribution actions remain available.</span>
+</div>
+
+<section class="execution-rail" aria-label="Contract execution phases">
+    <article class="execution-step" data-execution-state="DRAFT">
+        <span><?= ui_icon('file-earmark-text') ?></span>
+        <div><strong>Draft</strong><small>Edit, save versions, and review changes.</small></div>
+    </article>
+    <article class="execution-step" data-execution-state="AWAITING_CLIENT">
+        <span><?= ui_icon('person-check') ?></span>
+        <div><strong>Client</strong><small>Locked body with digital or hard-copy signing.</small></div>
+    </article>
+    <article class="execution-step" data-execution-state="AWAITING_COMPANY">
+        <span><?= ui_icon('shield-check') ?></span>
+        <div><strong>Company</strong><small>Representative signature, seal, and approval stamp.</small></div>
+    </article>
+    <article class="execution-step" data-execution-state="FULLY_SIGNED">
+        <span><?= ui_icon('send-check') ?></span>
+        <div><strong>Final</strong><small>Final PDF, secure link, and distribution record.</small></div>
+    </article>
+</section>
+
+<?php if ($isNew): ?>
+    <form id="contractCreateForm" class="surface form-surface form-grid mb-3">
+        <!-- Feature E1: metadata is collected beside the embedded editor before creating the first draft. -->
+        <label>
+            <span>Contract title</span>
+            <input id="contractTitle" name="title" type="text" value="New Contract" required>
+        </label>
+        <label>
+            <span>Document type</span>
+            <select id="contractType" name="document_type">
+                <option>Service Agreement</option>
+                <option>Financing Contract</option>
+                <option>Legal Agreement</option>
+            </select>
+        </label>
+        <label>
+            <span>Client name</span>
+            <input id="clientName" name="client_name" type="text" value="Demo Client" required>
+        </label>
+        <label>
+            <span>Client email</span>
+            <input id="clientEmail" name="client_email" type="email" value="client@itec.local" required>
+        </label>
+        <label class="field-span">
+            <span>Description</span>
+            <textarea id="contractDescription" name="description" rows="2" placeholder="Short internal description"></textarea>
+        </label>
+    </form>
+<?php endif; ?>
+
+<section class="workspace contract-editor-shell">
+    <article class="editor-card">
+        <div class="toolbar">
+            <div>
+                <strong><?= ui_icon('file-earmark-text') ?> Document body</strong>
+                <small id="saveMessage">Ready to edit</small>
+            </div>
+            <button type="button" id="saveButton">
+                <span class="spinner hidden"></span><span class="buttonText"><?= $isNew ? 'Create Contract' : 'Save Contract' ?></span>
+            </button>
+        </div>
+        <textarea id="documentEditor" class="document-editor" <?= $state !== 'DRAFT' ? 'readonly' : '' ?>><?= ui_e($content) ?></textarea>
+    </article>
+
+    <?php if ($editor_config['show_side_panel']): ?>
+        <aside class="review-panel">
+            <div class="panel-tabs">
+                <button class="panel-tab active" type="button" data-panel-tab="versions">Versions</button>
+                <button class="panel-tab" type="button" data-panel-tab="changes">Changes</button>
+                <button class="panel-tab" type="button" data-panel-tab="signing">Signing</button>
+                <button class="panel-tab" type="button" data-panel-tab="distribution">Distribution</button>
+            </div>
+
+            <section class="panel-section active" data-panel-section="versions">
+                <div class="panel-header"><h2>Version history</h2><small id="versionCount">0 saved</small></div>
+                <div id="versionsList" class="panel-list"><p class="muted">Save the contract to create versions.</p></div>
+            </section>
+
+            <section class="panel-section" data-panel-section="changes">
+                <button class="collapse-toggle" type="button" data-collapse-target="changesList">
+                    <span>Tracked changes</span><small id="changeCount">0 pending</small>
+                </button>
+                <div id="changesList" class="panel-list compact-list"></div>
+            </section>
+
+            <section class="panel-section" data-panel-section="signing">
+                <!-- Feature E4: client choice and hard-copy upload use the existing signing endpoints. -->
+                <div class="panel-header"><h2>Signing workflow</h2><small id="phaseInstruction">Send the approved draft to the client when review is complete.</small></div>
+                <div class="signing-summary">
+                    <div class="lock-status">
+                        <span id="lockPill" class="lock-pill <?= $state === 'DRAFT' ? 'draft' : 'locked' ?>">Draft editable</span>
+                        <small id="lockStatusText">Body editing is open until signing starts.</small>
+                    </div>
+                    <div class="phase-action-grid">
+                        <button id="submitForSigning" class="primary-action" type="button" <?= $isNew ? 'disabled' : '' ?>>Submit for signing</button>
+                        <button id="openSigningChoice" class="secondary-action" type="button" <?= $isNew ? 'disabled' : '' ?>>Client path</button>
+                    </div>
+                </div>
+                <div class="signature-actions">
+                    <h3>Signature and seal</h3>
+                    <a id="signatureAction" class="signature-action" href="<?= ui_e($jsConfig['signUrl'] ?? '#') ?>">Open signature block</a>
+                    <a id="sealAction" class="signature-action" href="#">Apply company seal</a>
+                    <small id="signatureActionHint">These actions become available as the contract moves through signing.</small>
+                </div>
+                <form id="signedCopyForm" class="upload-box" enctype="multipart/form-data">
+                    <label for="signedCopyFile">Returned hard-copy scan</label>
+                    <input id="signedCopyFile" name="signed_copy" type="file" accept=".pdf,.png,.jpg,.jpeg">
+                    <button type="submit">Upload signed scan</button>
+                    <small id="uploadMessage">Attach the scan after the client signs a printed copy.</small>
+                </form>
+            </section>
+
+            <section class="panel-section" data-panel-section="distribution">
+                <!-- Feature E5: distribution unlocks after company execution is complete. -->
+                <div class="panel-header"><h2>Final distribution</h2><small>Available after the contract is fully signed.</small></div>
+                <form id="distributionForm" class="distribution-box">
+                    <label for="recipientEmail">Client email</label>
+                    <input id="recipientEmail" name="recipient_email" type="email" placeholder="client@example.com">
+                    <button id="distributeButton" type="submit" disabled>Send final contract</button>
+                    <small id="distributionStateText">Available after full execution</small>
+                    <small id="distributionMessage"></small>
+                </form>
+                <div id="distributionResult" class="distribution-result hidden">
+                    <strong>Secure read-only link</strong>
+                    <a id="portalLink" href="#"></a>
+                    <small id="expiryLabel">Expires in 30 days</small>
+                </div>
+                <div class="signature-actions">
+                    <a id="finalPdfPreview" class="secondary-action disabled" href="<?= ui_e($jsConfig['finalPdfUrl'] ?? '#') ?>">Preview final PDF</a>
+                </div>
+            </section>
+        </aside>
+    <?php endif; ?>
+</section>
+
+<div id="signingModal" class="modal-backdrop hidden">
+    <section class="modal">
+        <header class="modal-header">
+            <div><p>client execution</p><h2>Choose signing path</h2></div>
+            <button id="closeSigningModal" class="icon-button" type="button" aria-label="Close"><?= ui_icon('x-lg') ?></button>
+        </header>
+        <div class="choice-grid">
+            <article class="choice-card">
+                <strong><?= ui_icon('pen') ?> Digital sign</strong>
+                <small>Client signs in the portal and the document body locks immediately.</small>
+                <button type="button" data-signing-choice="digital">Use digital signing</button>
+            </article>
+            <article class="choice-card">
+                <strong><?= ui_icon('printer') ?> Hard copy</strong>
+                <small>Generate a print-ready PDF, then upload the returned signed scan.</small>
+                <button type="button" data-signing-choice="hard_copy">Generate hard copy</button>
+            </article>
+        </div>
+        <div class="modal-actions">
+            <span id="signingMessage">Choose the path requested by the client.</span>
+            <a href="<?= ui_e($jsConfig['printPdfUrl'] ?? '#') ?>" target="_blank" rel="noopener">Print PDF</a>
+        </div>
+    </section>
+</div>

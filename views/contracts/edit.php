@@ -10,7 +10,7 @@ $activeNav = 'contracts';
 $headerMeta = 'contract workspace';
 $pageActions = [
     '<a class="button ghost" href="' . $basePath . '/contracts">Contract List</a>',
-    '<a class="button" href="' . $basePath . '/contracts/' . $contractId . '/edit">Open Document Editor</a>'
+    '<a class="button" href="' . $basePath . '/contracts/' . $contractId . '/editor">Open Document Editor</a>'
 ];
 
 ob_start();
@@ -65,9 +65,9 @@ ob_start();
         <div class="surface surface-pad">
             <h2>Connected pages</h2>
             <div class="stack-cards">
-                <a class="row-action primary" href="<?= $basePath ?>/contracts/<?= $contractId ?>/edit">Go to editor</a>
-                <a class="row-action" href="<?= $basePath ?>/contracts/versions">Version history</a>
-                <a class="row-action" href="<?= $basePath ?>/contracts/review">Review workspace</a>
+                <a class="row-action primary" href="<?= $basePath ?>/contracts/<?= $contractId ?>/editor">Go to editor</a>
+                <a class="row-action" href="<?= $basePath ?>/contracts/<?= $contractId ?>/versions">Version history</a>
+                <a class="row-action" href="<?= $basePath ?>/contracts/review/<?= $contractId ?>">Review workspace</a>
             </div>
         </div>
     </div>

@@ -9,7 +9,7 @@ $activeNav = 'home';
 $headerMeta = 'contract operations';
 $pageActions = [
     '<a class="button ghost" href="' . $basePath . '/contracts">View Contracts</a>',
-    '<a class="button" href="' . $basePath . '/contracts#new">New Contract</a>'
+    '<a class="button" href="' . $basePath . '/contracts/create">New Contract</a>'
 ];
 
 ob_start();
@@ -36,7 +36,7 @@ ob_start();
                     <tr><th>Contract</th><th>Client</th><th>Status</th><th>Owner</th><th>Next action</th></tr>
                 </thead>
                 <tbody>
-                    <tr><td>Service Agreement #1</td><td>Rwanda Tech Group</td><td><span class="status-pill draft">Draft</span></td><td>Elie</td><td><a href="<?= $basePath ?>/contracts/1/edit">Edit document</a></td></tr>
+                    <tr><td>Service Agreement</td><td>Rwanda Tech Group</td><td><span class="status-pill draft">Draft</span></td><td>Elie</td><td><a href="<?= $basePath ?>/contracts/create">Start draft</a></td></tr>
                     <tr><td>Financing Contract #8</td><td>Umucyo Stores</td><td><span class="status-pill client">Awaiting Client</span></td><td>Finance</td><td>Client signature</td></tr>
                     <tr><td>Lease Addendum #14</td><td>Kivu Logistics</td><td><span class="status-pill company">Company Action</span></td><td>Legal</td><td>Seal and sign</td></tr>
                 </tbody>
@@ -67,12 +67,12 @@ ob_start();
             <p>Chain of custody</p>
             <h2>Recent activity</h2>
         </div>
-        <a href="<?= $basePath ?>/views/contracts/audit-trail.php">Audit trail</a>
+        <a href="<?= $basePath ?>/contracts">Open contracts</a>
     </div>
     <div class="activity-grid">
         <article><strong>Version saved</strong><span>Contract #1 saved as a new document version.</span></article>
         <article><strong>Tracked changes ready</strong><span>Reviewer panel prepared for accept and reject actions.</span></article>
-        <article><strong>Distribution prepared</strong><span>Final PDF and token link UI ready for backend connection.</span></article>
+        <article><strong>Distribution prepared</strong><span>Final PDF and secure token link are ready for completed contracts.</span></article>
     </div>
 </section>
 <?php

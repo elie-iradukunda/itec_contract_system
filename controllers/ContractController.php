@@ -33,6 +33,11 @@ class ContractController extends Controller
             'title' => 'Contracts'
         ]);
     }
+
+    public function dashboard()
+    {
+        $this->index();
+    }
     
     public function create()
     {
@@ -43,17 +48,62 @@ class ContractController extends Controller
 
     public function show($id)
     {
-        $this->json([
-            'success' => true,
-            'contract_id' => $id,
-            'message' => 'Contract found'
-        ]);
+        $contract = $this->contractService->getContractById((int) $id);
+        if (!$contract) {
+            $this->view('errors/404', ['message' => 'Contract not found']);
+            return;
+        }
+
+        $this->view('contracts/show', ['contract' => $contract, 'title' => $contract['title']]);
     }
 
     public function edit($id)
     {
+        $this->editor($id);
+    }
+
+    public function store()
+    {
+        $this->apiStore();
+    }
+
+    public function update($id)
+    {
+        $this->contractService->updateContract((int) $id, $_POST ?: $this->requestData());
+        header('Location: ' . BASE_URL . '/contracts/show/' . (int) $id);
+        exit;
+    }
+
+    public function review($id)
+    {
+        $contract = $this->contractService->getContractById((int) $id);
+        $this->view('contracts/review', ['contract_id' => (int) $id, 'contract' => $contract, 'title' => 'Review Contract']);
+    }
+
+    public function readonly($id)
+    {
         $contract = $this->contractService->getEditorData((int) $id);
-        $this->view('contracts/editor', ['contract' => $contract]);
+        $this->view('contracts/readonly', ['contract_id' => (int) $id, 'contract' => $contract, 'title' => 'Read Only Contract']);
+    }
+
+    public function viewFinal($id)
+    {
+        $this->readonly($id);
+    }
+
+    public function executionStatus($id)
+    {
+        $this->view('contracts/execution-status', ['contract_id' => (int) $id, 'title' => 'Execution Status']);
+    }
+
+    public function finalPDF($id)
+    {
+        $this->streamContractPdf((int) $id, false);
+    }
+
+    public function auditTrailView($id)
+    {
+        $this->view('contracts/audit-trail', ['contract_id' => (int) $id, 'title' => 'Audit Trail']);
     }
 
     public function saveDocument($id)
@@ -92,6 +142,12 @@ class ContractController extends Controller
     public function downloadDocument($id)
     {
         $this->contractService->downloadEditorFile((int) $id);
+    }
+
+    public function getDocumentContent($id)
+    {
+        $contract = $this->contractService->getEditorData((int) $id);
+        $this->json(['success' => (bool) $contract, 'content' => $contract['content'] ?? ''], $contract ? 200 : 404);
     }
 
     private function currentUserId()
@@ -200,39 +256,38 @@ public function completeSigning($contractId)
     $this->json(['success' => true, 'message' => 'Contract signed successfully']);
 }
 
-   public function submitForSigning($id)
-{
-    $input = json_decode(file_get_contents('php://input'), true);
-    $signerId = $input['signer_id'] ?? $_POST['signer_id'] ?? 'staff@itec.com';
-    $clientEmail = $input['client_email'] ?? $_POST['client_email'] ?? null;
-    
-    $stmt = $this->db->prepare("SELECT id, title, signing_state, client_email FROM contracts WHERE id = ?");
-    $stmt->execute([$id]);
-    $contract = $stmt->fetch();
-    
-    if (!$contract) {
-        $this->json(['success' => false, 'error' => 'Contract not found'], 404);
-        return;
+    public function submitForSigning($id)
+    {
+        $input = json_decode(file_get_contents('php://input'), true) ?: [];
+        $signerId = $input['signer_id'] ?? $_POST['signer_id'] ?? 'staff@itec.com';
+        $clientEmail = $input['client_email'] ?? $_POST['client_email'] ?? null;
+        
+        $stmt = $this->db->prepare("SELECT id, title, signing_state, client_email FROM contracts WHERE id = ?");
+        $stmt->execute([$id]);
+        $contract = $stmt->fetch();
+        
+        if (!$contract) {
+            $this->json(['success' => false, 'error' => 'Contract not found'], 404);
+            return;
+        }
+
+        if (!$clientEmail) {
+            $clientEmail = $contract['client_email'] ?? null;
+        }
+        
+        if ($contract['signing_state'] !== 'DRAFT') {
+            $this->json([
+                'success' => false, 
+                'error' => 'Contract cannot be submitted. Current state: ' . $contract['signing_state']
+            ], 400);
+            return;
+        }
+        
+        $stateMachine = new OscarStateMachineService($id);
+        $result = $stateMachine->submitForSigning($signerId, $clientEmail);
+        
+        $this->json($result);
     }
-    
-    // Use client email from contract if not provided
-    if (!$clientEmail) {
-        $clientEmail = $contract['client_email'];
-    }
-    
-    if ($contract['signing_state'] !== 'DRAFT') {
-        $this->json([
-            'success' => false, 
-            'error' => 'Contract cannot be submitted. Current state: ' . $contract['signing_state']
-        ], 400);
-        return;
-    }
-    
-    $stateMachine = new OscarStateMachineService($id);
-    $result = $stateMachine->submitForSigning($signerId, $clientEmail);
-    
-    $this->json($result);
-}
 
     public function transition($id)
     {
@@ -245,24 +300,64 @@ public function completeSigning($contractId)
             return;
         }
         
-        $stateMachine = new OscarStateMachineService($id);
-        $result = $stateMachine->transition($targetState, $signerId);
-        
-        $this->json($result);
+        try {
+            $stateMachine = new OscarStateMachineService((int) $id);
+            $result = $this->runTargetTransition($stateMachine, $targetState, $signerId);
+            $this->json($result);
+        } catch (\Throwable $error) {
+            $this->json(['success' => false, 'error' => $error->getMessage()], 400);
+        }
+    }
+
+    public function clientSign($id)
+    {
+        $input = json_decode(file_get_contents('php://input'), true) ?: [];
+        $signerId = $input['signer_id'] ?? $_POST['signer_id'] ?? 'client@itec.com';
+
+        try {
+            $stateMachine = new OscarStateMachineService((int) $id);
+            $result = $stateMachine->clientSign($signerId, $input['doc_hash'] ?? null);
+
+            $stateMachine = new OscarStateMachineService((int) $id);
+            $stateMachine->escalateToCompany('system');
+            $result['new_state'] = 'AWAITING_COMPANY';
+            $result['message'] = 'Client signed successfully and contract escalated for company signature';
+
+            $this->json($result);
+        } catch (\Throwable $error) {
+            $this->json(['success' => false, 'error' => $error->getMessage()], 400);
+        }
+    }
+
+    public function escalateToCompany($id)
+    {
+        $input = json_decode(file_get_contents('php://input'), true) ?: [];
+        $signerId = $input['signer_id'] ?? $_POST['signer_id'] ?? 'system';
+
+        try {
+            $this->json((new OscarStateMachineService((int) $id))->escalateToCompany($signerId));
+        } catch (\Throwable $error) {
+            $this->json(['success' => false, 'error' => $error->getMessage()], 400);
+        }
+    }
+
+    public function companySign($id)
+    {
+        $input = json_decode(file_get_contents('php://input'), true) ?: [];
+        $signerId = $input['signer_id'] ?? $_POST['signer_id'] ?? 'company@itec.com';
+
+        try {
+            $result = (new OscarStateMachineService((int) $id))->companySign($signerId, $input['doc_hash'] ?? null);
+            $this->json($result);
+        } catch (\Throwable $error) {
+            $this->json(['success' => false, 'error' => $error->getMessage()], 400);
+        }
     }
     
     public function editor($id)
     {
-        $db = \Core\Database::getInstance()->getConnection();
-        
-        $stmt = $db->prepare("
-            SELECT id, title, description, file_path, signing_state, created_by, created_at, updated_at
-            FROM contracts 
-            WHERE id = ?
-        ");
-        $stmt->execute([$id]);
-        $contract = $stmt->fetch();
-        
+        $contract = $this->contractService->getEditorData((int) $id);
+
         if (!$contract) {
             $this->view('errors/404', [
                 'title' => 'Contract Not Found',
@@ -270,47 +365,10 @@ public function completeSigning($contractId)
             ]);
             return;
         }
-        
-        $isLocked = $contract['signing_state'] !== 'DRAFT';
-        
-        $versionStmt = $db->prepare("
-            SELECT version_no, file_path, saved_at 
-            FROM doc_versions 
-            WHERE contract_id = ? 
-            ORDER BY version_no DESC 
-            LIMIT 1
-        ");
-        $versionStmt->execute([$id]);
-        $latestVersion = $versionStmt->fetch();
-        
-        $filePath = $contract['file_path'];
-        if ($latestVersion && file_exists($latestVersion['file_path'])) {
-            $filePath = $latestVersion['file_path'];
-        }
-        
-        $content = '';
-        if ($filePath && file_exists($filePath)) {
-            $content = file_get_contents($filePath);
-        } else {
-            $content = '<p>Start editing your contract here...</p>';
-        }
-        
-        $contractData = [
-            'id' => $id,
-            'title' => $contract['title'],
-            'description' => $contract['description'],
-            'signing_state' => $contract['signing_state'],
-            'file_path' => $filePath,
-            'content' => $content,
-            'created_by' => $contract['created_by'],
-            'created_at' => $contract['created_at'],
-            'updated_at' => $contract['updated_at'],
-            'latest_version' => $latestVersion['version_no'] ?? 0,
-            'last_saved_at' => $latestVersion['saved_at'] ?? $contract['updated_at']
-        ];
-        
+
         $this->view('contracts/editor', [
-            'contract' => $contractData,
+            'contract_id' => (int) $id,
+            'contract' => $contract,
             'title' => 'Contract Editor'
         ]);
     }
@@ -474,6 +532,84 @@ public function completeSigning($contractId)
         return $result['count'] ?? 0;
     }
 
+    public function changesPanel($id)
+    {
+        $this->getChanges($id);
+    }
+
+    
+    
+
+    public function apiIndex()
+    {
+        $contracts = $this->contractService->getAllContracts([
+            'status' => $_GET['status'] ?? null,
+            'search' => $_GET['search'] ?? null,
+        ]);
+
+        $this->json(['success' => true, 'contracts' => $contracts]);
+    }
+
+    public function apiShow($id)
+    {
+        $contract = $this->contractService->getContractById((int) $id);
+        $this->json(['success' => (bool) $contract, 'contract' => $contract], $contract ? 200 : 404);
+    }
+
+    public function apiUpdate($id)
+    {
+        try {
+            $contract = $this->contractService->updateContract((int) $id, $this->requestData());
+            $this->json(['success' => true, 'contract' => $contract]);
+        } catch (\Throwable $error) {
+            $this->json(['success' => false, 'error' => $error->getMessage()], 500);
+        }
+    }
+
+    public function apiDelete($id)
+    {
+        $this->json(['success' => $this->contractService->deleteContract((int) $id)]);
+    }
+
+    public function distribute($id)
+    {
+        $contract = $this->contractService->getContractById((int) $id);
+        if (!$contract) {
+            $this->json(['success' => false, 'error' => 'Contract not found'], 404);
+            return;
+        }
+
+        if (strtoupper($contract['signing_state'] ?? '') !== 'FULLY_SIGNED') {
+            $this->json(['success' => false, 'error' => 'Distribution is available only after FULLY_SIGNED'], 409);
+            return;
+        }
+
+        $input = $this->requestData();
+        $email = $input['recipient_email'] ?? $contract['client_email'] ?? 'client@itec.local';
+        $expiresAt = date('Y-m-d H:i:s', strtotime('+30 days'));
+        $token = hash('sha256', $id . $email . (getenv('APP_SECRET') ?: 'dev-secret') . $expiresAt);
+
+        $stmt = $this->db->prepare("
+            INSERT INTO doc_distributions (contract_id, recipient_email, token, expires_at)
+            VALUES (?, ?, ?, ?)
+        ");
+        $stmt->execute([(int) $id, $email, $token, $expiresAt]);
+
+        $this->json([
+            'success' => true,
+            'token' => $token,
+            'portal_url' => BASE_URL . '/access/' . $token,
+            'expires_at' => $expiresAt
+        ]);
+    }
+
+    public function getDistributions($id)
+    {
+        $stmt = $this->db->prepare("SELECT * FROM doc_distributions WHERE contract_id = ? ORDER BY created_at DESC");
+        $stmt->execute([(int) $id]);
+        $this->json(['success' => true, 'distributions' => $stmt->fetchAll()]);
+    }
+
 public function apiStore()
 {
     // Get JSON input
@@ -493,17 +629,22 @@ public function apiStore()
     }
     
     try {
-        // Insert into database first to get contract ID
-        $sql = "INSERT INTO contracts (client_name, client_email, title, description, signing_state, created_by) 
-                VALUES (:client_name, :client_email, :title, :description, 'DRAFT', :created_by)";
+        $clientId = $this->ensureClientForContract($clientName, $clientEmail);
+        $createdBy = $this->resolveCreatedBy($input['created_by'] ?? $_POST['created_by'] ?? null);
+
+        // Insert into database first to get contract ID.
+        $sql = "INSERT INTO contracts (client_id, client_name, client_email, title, document_type, description, signing_state, created_by) 
+                VALUES (:client_id, :client_name, :client_email, :title, :document_type, :description, 'DRAFT', :created_by)";
         
         $stmt = $this->db->prepare($sql);
         $stmt->execute([
+            'client_id' => $clientId,
             'client_name' => $clientName,
             'client_email' => $clientEmail,
             'title' => $title,
+            'document_type' => $input['document_type'] ?? $input['type'] ?? 'Service Agreement',
             'description' => $input['description'] ?? null,
-            'created_by' => $input['created_by'] ?? $_POST['created_by'] ?? 'api_user'
+            'created_by' => $createdBy
         ]);
         
         $contractId = $this->db->lastInsertId();
@@ -560,18 +701,114 @@ public function apiStore()
             ]
         ]);
         
-    } catch (PDOException $e) {
+    } catch (\PDOException $e) {
         $this->json([
             'success' => false, 
             'error' => 'Database error: ' . $e->getMessage()
         ], 500);
-    } catch (Exception $e) {
+    } catch (\Throwable $e) {
         $this->json([
             'success' => false, 
             'error' => 'Error: ' . $e->getMessage()
         ], 500);
     }
 }
+
+    private function ensureClientForContract($clientName, $clientEmail)
+    {
+        $stmt = $this->db->prepare("SELECT id FROM clients WHERE email = ? LIMIT 1");
+        $stmt->execute([$clientEmail]);
+        $existing = $stmt->fetchColumn();
+        if ($existing) {
+            return (int) $existing;
+        }
+
+        $stmt = $this->db->prepare("
+            INSERT INTO clients (name, email, company_name, status)
+            VALUES (?, ?, ?, 'active')
+        ");
+        $stmt->execute([$clientName, $clientEmail, $clientName]);
+
+        return (int) $this->db->lastInsertId();
+    }
+
+    private function resolveCreatedBy($createdBy)
+    {
+        $id = (int) $createdBy;
+        if ($id > 0) {
+            return $id;
+        }
+
+        if (session_status() === PHP_SESSION_NONE) {
+            @session_start();
+        }
+
+        $sessionId = (int) ($_SESSION['user_id'] ?? 0);
+        if ($sessionId > 0) {
+            return $sessionId;
+        }
+
+        $existing = (int) $this->db->query("SELECT id FROM users ORDER BY id ASC LIMIT 1")->fetchColumn();
+        if ($existing > 0) {
+            return $existing;
+        }
+
+        $stmt = $this->db->prepare("
+            INSERT INTO users (name, email, password, role)
+            VALUES ('Demo Staff', 'staff@itec.local', '', 'staff')
+        ");
+        $stmt->execute();
+
+        return (int) $this->db->lastInsertId();
+    }
+
+    private function requestData()
+    {
+        $raw = file_get_contents('php://input');
+        $json = json_decode($raw ?: '', true);
+
+        return is_array($json) ? $json : $_POST;
+    }
+
+    private function streamContractPdf($id, $printReady)
+    {
+        $contract = $this->contractService->getEditorData($id);
+        if (!$contract) {
+            http_response_code(404);
+            echo 'Contract not found';
+            return;
+        }
+
+        $pdf = new \TCPDF();
+        $pdf->SetCreator('ITEC Contract System');
+        $pdf->SetTitle($contract['title']);
+        $pdf->AddPage();
+        $pdf->SetFont('helvetica', '', 11);
+        $pdf->writeHTML('<h1>' . htmlspecialchars($contract['title']) . '</h1>' . ($contract['content'] ?? ''), true, false, true, false, '');
+
+        if ($printReady) {
+            $pdf->Ln(12);
+            $pdf->Cell(0, 8, 'Client Signature: ____________________________    Date: _______________', 0, 1);
+        }
+
+        $pdf->Output('contract-' . $id . '.pdf', 'I');
+    }
+
+    private function runTargetTransition(OscarStateMachineService $stateMachine, $targetState, $signerId)
+    {
+        $map = [
+            OscarStateMachineService::STATE_AWAITING_CLIENT => 'submitForSigning',
+            OscarStateMachineService::STATE_CLIENT_SIGNED => 'clientSign',
+            OscarStateMachineService::STATE_AWAITING_COMPANY => 'escalateToCompany',
+            OscarStateMachineService::STATE_FULLY_SIGNED => 'companySign',
+        ];
+
+        if (!isset($map[$targetState])) {
+            throw new \Exception('Unsupported target_state: ' . $targetState);
+        }
+
+        return $stateMachine->{$map[$targetState]}($signerId);
+    }
 
 private function convertToPdf($inputPath)
 {

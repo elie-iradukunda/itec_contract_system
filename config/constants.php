@@ -1,26 +1,39 @@
 <?php
-// Application Base URL
-define('BASE_URL', '/itec_contract_system');
 
-// Application Paths
-define('BASE_PATH', dirname(__DIR__));
-define('STORAGE_PATH', BASE_PATH . '/storage');
-define('CONTRACTS_STORAGE', STORAGE_PATH . '/contracts');
-define('SNAPSHOTS_STORAGE', STORAGE_PATH . '/snapshots');
+$envFile = dirname(__DIR__) . '/.env';
+if (file_exists($envFile)) {
+    foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+        $line = trim($line);
+        if ($line === '' || str_starts_with($line, '#') || !str_contains($line, '=')) {
+            continue;
+        }
 
-// Database (from your existing setup)
-// define('DB_HOST', 'localhost');
-// define('DB_NAME', 'itec_contracts');
-// define('DB_USER', 'root');
-// define('DB_PASS', '');
+        [$key, $value] = array_map('trim', explode('=', $line, 2));
+        if (getenv($key) === false) {
+            putenv($key . '=' . $value);
+        }
+        $_ENV[$key] = $_ENV[$key] ?? $value;
+    }
+}
 
-// Date Formats
-define('DATE_FORMAT', 'Y-m-d H:i:s');
-define('DISPLAY_DATE_FORMAT', 'M d, Y g:i A');
+$appUrl = rtrim(getenv('APP_URL') ?: 'http://localhost/itec_contract_system', '/');
+$basePath = parse_url($appUrl, PHP_URL_PATH) ?: '/itec_contract_system';
+$basePath = '/' . trim($basePath, '/');
 
-// Upload Limits
-define('MAX_FILE_SIZE', 10 * 1024 * 1024); // 10MB
 
-// Company Seal
-define('COMPANY_SEAL_PATH', BASE_PATH . '/storage/seal.png');
-define('COMPANY_NAME', 'ITEC LTD');
+
+if (!defined('APP_URL')) {
+    define('APP_URL', $appUrl);
+}
+
+if (!defined('BASE_URL')) {
+    define('BASE_URL', $basePath);
+}
+
+if (!defined('PROJECT_ROOT')) {
+    define('PROJECT_ROOT', dirname(__DIR__));
+}
+
+if (!defined('STORAGE_PATH')) {
+    define('STORAGE_PATH', PROJECT_ROOT . '/storage');
+}

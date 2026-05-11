@@ -1,98 +1,57 @@
 <?php
-$title = 'Create New Contract';
+require_once dirname(__DIR__) . '/components/ui.php';
 
-require_once __DIR__ . "/../../config/constants.php";
+$title = 'Create New Contract';
+$activeNav = 'contracts';
+$headerMeta = 'contract drafting';
+$showPageHeader = false;
+$pageStyles = [BASE_URL . '/public/assets/css/contract-editor.css'];
+$pageScripts = [
+    BASE_URL . '/public/vendor/tinymce/tinymce.min.js',
+    BASE_URL . '/public/assets/js/contract-editor.js',
+];
 
 ob_start();
 ?>
-
-<div class="container-fluid">
-    <div class="row">
-        <div class="col-12">
-
-            <script>
-                window.BASE_URL = '<?= BASE_URL ?>';
-            </script>
-
-            <?php
-            $editor_config = [
-                'contract_id' => 0,
-                'content' => '',
-                'is_locked' => false,
-                'readonly' => false,
-                'height' => '600px',
-                'show_version_history' => false,
-                'show_tracked_changes' => true
-            ];
-
-            include __DIR__ . '/../components/contract-editor.php';
-            ?>
-
-        </div>
+<section class="create-hero surface">
+    <div>
+        <p>phase 1 starts here</p>
+        <h1>Create a contract draft</h1>
+        <span>Enter the client details, prepare the first version, then continue into review before sending it for signing.</span>
     </div>
-</div>
+    <a class="button ghost" href="<?= BASE_URL ?>/contracts">Back to contracts</a>
+</section>
 
-<script>
-document.addEventListener('alpine:init', () => {
+<section class="create-guide" aria-label="Create contract guide">
+    <article class="surface guide-card">
+        <span><?= ui_icon('person-vcard') ?></span>
+        <div><strong>Client details</strong><small>Name and email are used for the signing link.</small></div>
+    </article>
+    <article class="surface guide-card">
+        <span><?= ui_icon('file-earmark-text') ?></span>
+        <div><strong>Draft body</strong><small>The first save creates version 1.</small></div>
+    </article>
+    <article class="surface guide-card">
+        <span><?= ui_icon('check2-square') ?></span>
+        <div><strong>Review next</strong><small>Tracked changes are cleared before signing.</small></div>
+    </article>
+</section>
 
-    Alpine.data('newContractEditor', () => ({
-        content: '',
-
-        init() {
-            const editor = document.querySelector('[contenteditable="true"]');
-
-            if (editor) {
-                this.content = editor.innerHTML;
-
-                editor.addEventListener('input', () => {
-                    this.content = editor.innerHTML;
-                });
-            }
-        },
-
-        saveDocument() {
-
-            const editor = document.querySelector('[contenteditable="true"]');
-
-            if (editor) {
-                this.content = editor.innerHTML;
-            }
-
-            fetch(`${window.BASE_URL}/api/contracts`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    title: 'Untitled Contract',
-                    content: this.content
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-
-                if (data.success) {
-                    window.location.href =
-                        `${window.BASE_URL}/contracts/${data.contract_id}/edit`;
-                } else {
-                    alert(data.message || 'Failed to create contract');
-                }
-
-            })
-            .catch(error => {
-                console.error(error);
-                alert('Something went wrong');
-            });
-        }
-    }));
-
-});
-</script>
-
-
-
+<div class="create-contract-page">
 <?php
-$content = ob_get_clean();
 
-require_once __DIR__ . '/../layouts/app.php';
+$editor_config = [
+    'contract_id' => 0,
+    'title' => 'Untitled Draft',
+    'content' => '<h2>Contract Overview</h2><p>Describe the agreement, parties, services, payment terms, timeline, and signature obligations.</p><h2>Scope of Work</h2><p>Add the services or obligations covered by this contract.</p><h2>Payment Terms</h2><p>Add payment amount, schedule, and conditions.</p>',
+    'signing_state' => 'DRAFT',
+    'show_side_panel' => false,
+];
+
+require dirname(__DIR__) . '/components/contract-editor.php';
 ?>
+</div>
+<?php
+
+$content = ob_get_clean();
+require dirname(__DIR__) . '/layouts/app.php';
