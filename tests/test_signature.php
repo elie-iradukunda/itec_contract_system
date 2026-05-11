@@ -105,7 +105,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
 
                 
-            case 'sign':
+            
+                case 'sign':
                 $contractId = $_POST['contract_id'];
                 $signerId = $_POST['signer_id'];
                 

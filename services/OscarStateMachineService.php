@@ -1,7 +1,7 @@
 <?php
-
 namespace Services;
 
+require_once __DIR__ . '/../config/constants.php';
 use Core\Database;
 use Core\Mail;
 use Exception;
@@ -148,7 +148,7 @@ class OscarStateMachineService
         return $events[$newState] ?? 'state_change';
     }
     
-    private function sendEmailOnTransition($newState, $additionalData = [])
+  private function sendEmailOnTransition($newState, $additionalData = [])
 {
     $contract = $this->getContractDetails();
     
@@ -156,88 +156,144 @@ class OscarStateMachineService
         return;
     }
     
+<<<<<<< HEAD
+    $baseUrl = "http://" . ($_SERVER['HTTP_HOST'] ?? 'localhost') . "/".BASE_URL;
+=======
     $baseUrl = defined('BASE_URL') ? BASE_URL : '/itec_contract_system';
+>>>>>>> 958ad639205705ea1da6d0db67e6337b89b4f856
     $companyEmail = getenv('SMTP_FROM_EMAIL') ?: 'company@itec.com';
     $clientEmail = $additionalData['client_email'] ?? $this->getClientEmail();
     
     switch ($newState) {
         case self::STATE_AWAITING_CLIENT:
-            // Generate distribution token for client
-            $distribution = $this->generateDistributionToken($this->contractId, $clientEmail);
-            
-            $to = $clientEmail;
-            $subject = "Contract Ready for Signing - {$contract['title']}";
-            $body = "<html><body>
-                <h2>Contract Ready for Signing</h2>
-                <p>Dear Client,</p>
-                <p>Contract <strong>{$contract['title']}</strong> is ready for your signature.</p>
-                
-                <p><strong>Option 1 - Digital Sign:</strong><br>
-                <a href='{$distribution['sign_url']}'>Click here to sign digitally</a></p>
-                
-                <p><strong>Option 2 - Hard Copy:</strong><br>
-                <a href='{$baseUrl}/contracts/{$this->contractId}/print-pdf'>Download Print-Ready PDF</a><br>
-                Print the contract, sign it physically, and upload the scanned copy using the link above.</p>
-                
-                <p>This signing link expires on: {$distribution['expires_at']}</p>
-                
-                <p>Thank you,<br>ITEC Team</p>
-                </body></html>";
-            
-            $this->mail->send($to, $subject, $body);
+            $this->sendContractReadyEmail($contract, $clientEmail, $baseUrl);
             break;
             
         case self::STATE_CLIENT_SIGNED:
-            $to = $companyEmail;
-            $subject = "Contract Signed by Client - {$contract['title']}";
-            $body = "<html><body>
-                <h2>Contract Signed by Client</h2>
-                <p>Contract <strong>{$contract['title']}</strong> has been signed by the client.</p>
-                <p><a href='{$baseUrl}/contracts/review/{$this->contractId}'>Review and Add Company Signature</a></p>
-                </body></html>";
-            $this->mail->send($to, $subject, $body);
+            $this->sendClientSignedEmail($contract, $companyEmail, $baseUrl);
             break;
             
         case self::STATE_AWAITING_COMPANY:
-            $to = $companyEmail;
-            $subject = "Company Signature Required - {$contract['title']}";
-            $body = "<html><body>
-                <h2>Company Signature Required</h2>
-                <p>Contract <strong>{$contract['title']}</strong> requires company signature and seal.</p>
-                <p><a href='{$baseUrl}/contracts/sign-company/{$this->contractId}'>Sign as Company</a></p>
-                </body></html>";
-            $this->mail->send($to, $subject, $body);
+            $this->sendCompanySignatureRequiredEmail($contract, $companyEmail, $baseUrl);
             break;
             
         case self::STATE_FULLY_SIGNED:
-            $to = $clientEmail;
-            $subject = "Contract Fully Executed - {$contract['title']}";
-            $body = "<html><body>
-                <h2>Contract Fully Executed</h2>
-                <p>Dear Client,</p>
-                <p>Contract <strong>{$contract['title']}</strong> has been fully executed.</p>
-                <p><a href='{$baseUrl}/contracts/view/{$this->contractId}'>View Final Contract</a></p>
-                <p>The final PDF is attached to this email for your records.</p>
-                </body></html>";
-            $this->mail->send($to, $subject, $body);
-            
-            // Trigger stamp pipeline
+            $this->sendContractFullyExecutedEmail($contract, $clientEmail, $baseUrl);
             $this->triggerStampPipeline($additionalData);
             break;
     }
 }
 
+private function sendContractReadyEmail($contract, $clientEmail, $baseUrl)
+{
+    // Generate distribution token for client
+    $distribution = $this->generateDistributionToken($this->contractId, $clientEmail);
+    
+    $to = $clientEmail;
+    $subject = "Verify and Sign Contract - {$contract['title']}";
+    
+    $body = "<html><body>
+        <h2>Contract Ready for Your Signature</h2>
+        <p>Dear Client,</p>
+        <p>Contract <strong>{$contract['title']}</strong> is ready for your review and signature.</p>
+        
+        <p>Please click the button below to verify and sign the contract:</p>
+        
+        <p style='text-align: center;'>
+            <a href='{$distribution['sign_url']}' style='display: inline-block; background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;'>
+                Verify and Sign Contract
+            </a>
+        </p>
+        
+        <p>Once you click the link, you will be able to:</p>
+        <ul>
+            <li>Review the full contract document</li>
+            <li>Choose between digital signature or hard copy</li>
+            <li>Complete the signing process</li>
+        </ul>
+        
+        <p><strong>Important:</strong> This link will expire on {$distribution['expires_at']}.</p>
+        
+        <p>If the button doesn't work, copy and paste this link into your browser:</p>
+        <p>{$distribution['sign_url']}</p>
+        
+        <br>
+        <p>Thank you,<br>ITEC Team</p>
+        </body></html>";
+    
+    $this->mail->send($to, $subject, $body);
+}
 
-    private function generateDistributionToken($contractId, $clientEmail)
+private function sendClientSignedEmail($contract, $companyEmail, $baseUrl)
+{
+    $to = $companyEmail;
+    $subject = "Contract Signed by Client - {$contract['title']}";
+    
+    $body = "<html><body>
+        <h2>Contract Signed by Client</h2>
+        <p>Contract <strong>{$contract['title']}</strong> has been signed by the client.</p>
+        <p><a href='{$baseUrl}/contracts/review/{$this->contractId}'>Review and Add Company Signature</a></p>
+        <p>Please log in to review the contract and add your signature and company seal.</p>
+        </body></html>";
+    
+    $this->mail->send($to, $subject, $body);
+}
+
+private function sendCompanySignatureRequiredEmail($contract, $companyEmail, $baseUrl)
+{
+    $to = $companyEmail;
+    $subject = "Company Signature Required - {$contract['title']}";
+    
+    $body = "<html><body>
+        <h2>Company Signature Required</h2>
+        <p>Contract <strong>{$contract['title']}</strong> requires company signature and seal.</p>
+        <p><a href='{$baseUrl}/contracts/sign-company/{$this->contractId}'>Sign as Company</a></p>
+        <p>The client has already signed. Please add the company signature and seal to complete the contract.</p>
+        </body></html>";
+    
+    $this->mail->send($to, $subject, $body);
+}
+
+private function sendContractFullyExecutedEmail($contract, $clientEmail, $baseUrl)
+{
+    $to = $clientEmail;
+    $subject = "Contract Fully Executed - {$contract['title']}";
+    
+    $body = "<html><body>
+        <h2>Contract Fully Executed</h2>
+        <p>Dear Client,</p>
+        <p>Contract <strong>{$contract['title']}</strong> has been fully executed.</p>
+        <p><a href='{$baseUrl}/contracts/view/{$this->contractId}'>View Final Contract</a></p>
+        <p>The final PDF is attached to this email for your records.</p>
+        <p>Thank you for your business.</p>
+        <br>
+        <p>Best regards,<br>ITEC Team</p>
+        </body></html>";
+    
+    $this->mail->send($to, $subject, $body);
+}
+
+  private function generateDistributionToken($contractId, $clientEmail)
 {
     // Generate unique token
     $expiryDays = 30;
     $expiresAt = date('Y-m-d H:i:s', strtotime("+{$expiryDays} days"));
     
-    // Create token: hash(contract_id + client_email + secret + expiry)
+    // Create token: hash(contract_id + client_email + secret + expiry + random_salt)
     $secret = getenv('APP_SECRET') ?: 'itec_contract_secret_key';
-    $tokenData = $contractId . $clientEmail . $secret . $expiresAt;
+    $randomSalt = bin2hex(random_bytes(16));
+    $tokenData = $contractId . $clientEmail . $secret . $expiresAt . $randomSalt;
     $token = hash('sha256', $tokenData);
+    
+    // Check if token already exists (regenerate if duplicate)
+    $checkStmt = $this->db->prepare("SELECT id FROM doc_distributions WHERE token = ?");
+    $checkStmt->execute([$token]);
+    if ($checkStmt->fetch()) {
+        // Token collision - regenerate with different salt
+        $randomSalt = bin2hex(random_bytes(16));
+        $tokenData = $contractId . $clientEmail . $secret . $expiresAt . $randomSalt;
+        $token = hash('sha256', $tokenData);
+    }
     
     // Store in doc_distributions table
     $sql = "INSERT INTO doc_distributions (contract_id, recipient_email, token, expires_at, status, created_at) 
@@ -251,12 +307,21 @@ class OscarStateMachineService
         'expires_at' => $expiresAt
     ]);
     
+    // Get the protocol (HTTP or HTTPS)
+    $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    
     return [
         'token' => $token,
         'expires_at' => $expiresAt,
+<<<<<<< HEAD
+        'sign_url' => "{$protocol}://{$host}/itec_contract_system/access/{$token}"
+=======
         'sign_url' => (defined('BASE_URL') ? BASE_URL : '/itec_contract_system') . "/access/{$token}"
+>>>>>>> 958ad639205705ea1da6d0db67e6337b89b4f856
     ];
 }
+
     private function triggerStampPipeline($additionalData = [])
     {
         try {
