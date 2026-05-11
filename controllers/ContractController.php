@@ -3,15 +3,19 @@
 namespace Controllers;
 
 use Core\Controller;
+use Core\Database;
+use Services\OscarStateMachineService;
 
 class ContractController extends Controller
 {
     private $contractService;
     private $auditService;
+    private $db;
 
     public function __construct($contractService = null, $auditService = null)
     {
         parent::__construct();
+        $this->db = Database::getInstance()->getConnection();
         $this->contractService = $contractService;
         $this->auditService = $auditService;
     }
@@ -22,12 +26,13 @@ class ContractController extends Controller
             'title' => 'Contracts'
         ]);
     }
-        public function create()
-        {
-            $this->view('contracts/create', [
-                'title' => 'Create New Contract'
-            ]);
-        }
+    
+    public function create()
+    {
+        $this->view('contracts/create', [
+            'title' => 'Create New Contract'
+        ]);
+    }
 
     public function show($id)
     {
@@ -40,14 +45,12 @@ class ContractController extends Controller
 
     public function edit($id)
     {
-        // Open the in-browser editor page.
         $contract = $this->contractService->getEditorData((int) $id);
         $this->view('contracts/editor', ['contract' => $contract]);
     }
 
     public function saveDocument($id)
     {
-        // Save CKEditor content or an uploaded DOCX and create a version.
         try {
             $file = $_FILES['contract_file'] ?? null;
             $savedBy = $this->currentUserId();
@@ -71,7 +74,6 @@ class ContractController extends Controller
 
     public function getStatus($id)
     {
-        // Return the contract state used by the editor polling UI.
         $contract = $this->contractService->getEditorData((int) $id);
 
         $this->json([
@@ -82,298 +84,393 @@ class ContractController extends Controller
 
     public function downloadDocument($id)
     {
-        // Stream the current browser-edited DOCX file.
         $this->contractService->downloadEditorFile((int) $id);
     }
 
     private function currentUserId()
     {
-        // Read the active user id when auth is available.
         if (session_status() === PHP_SESSION_NONE) {
             @session_start();
         }
-
         return $_SESSION['user_id'] ?? null;
     }
 
-
-
-public function getState($id)
-{
-    $stateMachine = new \Services\OscarStateMachineService();
-    $state = $stateMachine->getCurrentState($id);
-    $nextState = $stateMachine->getNextState($state);
-    
-    $this->json([
-        'contract_id' => $id,
-        'current_state' => $state,
-        'next_state' => $nextState,
-        'can_transition' => ($nextState !== null)
-    ]);
-}
-
-public function submitForSigning($id)
-{
-    session_start();
-    $userId = $_SESSION['user_id'] ?? null;
-    
-    $stateMachine = new \Services\OscarStateMachineService();
-    $result = $stateMachine->submitForSigning($id, $userId);
-    
-    $this->json($result);
-}
-
-public function transition($id)
-{
-    session_start();
-    $userId = $_SESSION['user_id'] ?? null;
-    
-    $stateMachine = new \Services\OscarStateMachineService();
-    $currentState = $stateMachine->getCurrentState($id);
-    
-    if (!$currentState) {
-        $this->json(['success' => false, 'error' => 'Contract not found'], 404);
-        return;
-    }
-    
-    $result = $stateMachine->transition($id, $currentState, $userId);
-    $this->json($result);
-}
-public function editor($id)
-{
-    // Get contract data directly from database
-    $db = \Core\Database::getInstance()->getConnection();
-    
-    $stmt = $db->prepare("
-        SELECT id, title, description, file_path, signing_state, created_by, created_at, updated_at
-        FROM contracts 
-        WHERE id = ?
-    ");
-    $stmt->execute([$id]);
-    $contract = $stmt->fetch();
-    
-    if (!$contract) {
-        $this->view('errors/404', [
-            'title' => 'Contract Not Found',
-            'message' => 'Contract with ID ' . $id . ' does not exist'
+    public function getState($id)
+    {
+        $stateMachine = new OscarStateMachineService($id);
+        $stateInfo = $stateMachine->getCurrentState();
+        
+        $this->json([
+            'contract_id' => $id,
+            'current_state' => $stateInfo['state'],
+            'allowed_actions' => $stateInfo['allowed_actions'],
+            'timeline' => $stateInfo['timeline']
         ]);
-        return;
     }
-    
-    // Determine if body is frozen (locked)
-    $isLocked = $contract['signing_state'] !== 'DRAFT';
-    
-    // Get the latest version from doc_versions
-    $versionStmt = $db->prepare("
-        SELECT version_no, file_path, saved_at 
-        FROM doc_versions 
-        WHERE contract_id = ? 
-        ORDER BY version_no DESC 
-        LIMIT 1
-    ");
-    $versionStmt->execute([$id]);
-    $latestVersion = $versionStmt->fetch();
-    
-    // Get file path
-    $filePath = $contract['file_path'];
-    if ($latestVersion && file_exists($latestVersion['file_path'])) {
-        $filePath = $latestVersion['file_path'];
-    }
-    
-    // Load document content
-    $content = '';
-    if ($filePath && file_exists($filePath)) {
-        $content = file_get_contents($filePath);
-    } else {
-        $content = '<p>Start editing your contract here...</p>';
-    }
-    
-    // Build the contract array expected by the view
-    $contractData = [
-        'id' => $id,
-        'title' => $contract['title'],
-        'description' => $contract['description'],
-        'signing_state' => $contract['signing_state'],
-        'file_path' => $filePath,
-        'content' => $content,
-        'created_by' => $contract['created_by'],
-        'created_at' => $contract['created_at'],
-        'updated_at' => $contract['updated_at'],
-        'latest_version' => $latestVersion['version_no'] ?? 0,
-        'last_saved_at' => $latestVersion['saved_at'] ?? $contract['updated_at']
-    ];
-    
-    $this->view('contracts/editor', [
-        'contract' => $contractData,
-        'title' => 'Contract Editor'
-    ]);
-}
-public function getChanges($id)
-{
-    // Get tracked changes for this contract
-    $db = \Core\Database::getInstance()->getConnection();
-    
-    $stmt = $db->prepare("
-        SELECT id, author_id, original_text, new_text, status, changed_at 
-        FROM doc_tracked_changes 
-        WHERE contract_id = ? 
-        ORDER BY changed_at DESC
-    ");
-    $stmt->execute([$id]);
-    $changes = $stmt->fetchAll();
-    
-    // Get current signing state to check if body is locked
-    $stateStmt = $db->prepare("SELECT signing_state FROM contracts WHERE id = ?");
-    $stateStmt->execute([$id]);
-    $contract = $stateStmt->fetch();
-    
-    $isLocked = $contract['signing_state'] !== 'DRAFT';
-    
-    $this->json([
-        'success' => true,
-        'contract_id' => $id,
-        'is_locked' => $isLocked,
-        'changes' => $changes,
-        'total' => count($changes),
-        'pending_count' => $this->countPendingChanges($db, $id)
-    ]);
-}
 
-public function acceptChange($id, $changeId)
-{
-    $db = \Core\Database::getInstance()->getConnection();
+    public function submitForSigning($id)
+    {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $signerId = $input['signer_id'] ?? $_POST['signer_id'] ?? 'staff@itec.com';
+        
+        $stmt = $this->db->prepare("SELECT id, title, signing_state FROM contracts WHERE id = ?");
+        $stmt->execute([$id]);
+        $contract = $stmt->fetch();
+        
+        if (!$contract) {
+            $this->json(['success' => false, 'error' => 'Contract not found'], 404);
+            return;
+        }
+        
+        if ($contract['signing_state'] !== 'DRAFT') {
+            $this->json([
+                'success' => false, 
+                'error' => 'Contract cannot be submitted. Current state: ' . $contract['signing_state']
+            ], 400);
+            return;
+        }
+        
+        $stateMachine = new OscarStateMachineService($id);
+        $result = $stateMachine->submitForSigning($signerId);
+        
+        $this->json($result);
+    }
+
+    public function transition($id)
+    {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $targetState = $input['target_state'] ?? null;
+        $signerId = $input['signer_id'] ?? 'system';
+        
+        if (!$targetState) {
+            $this->json(['success' => false, 'error' => 'target_state required'], 400);
+            return;
+        }
+        
+        $stateMachine = new OscarStateMachineService($id);
+        $result = $stateMachine->transition($targetState, $signerId);
+        
+        $this->json($result);
+    }
     
-    // Start transaction
-    $db->beginTransaction();
-    
-    try {
-        // Get the change details
+    public function editor($id)
+    {
+        $db = \Core\Database::getInstance()->getConnection();
+        
         $stmt = $db->prepare("
-            SELECT contract_id, original_text, new_text, status 
-            FROM doc_tracked_changes 
-            WHERE id = ? AND contract_id = ?
-        ");
-        $stmt->execute([$changeId, $id]);
-        $change = $stmt->fetch();
-        
-        if (!$change) {
-            $this->json(['success' => false, 'error' => 'Change not found'], 404);
-            return;
-        }
-        
-        if ($change['status'] !== 'pending') {
-            $this->json(['success' => false, 'error' => 'Change already processed'], 400);
-            return;
-        }
-        
-        // Update the change status
-        $updateStmt = $db->prepare("
-            UPDATE doc_tracked_changes 
-            SET status = 'accepted' 
+            SELECT id, title, description, file_path, signing_state, created_by, created_at, updated_at
+            FROM contracts 
             WHERE id = ?
         ");
-        $updateStmt->execute([$changeId]);
+        $stmt->execute([$id]);
+        $contract = $stmt->fetch();
         
-        // Write to audit log
-        $auditStmt = $db->prepare("
-            INSERT INTO doc_signature_audit 
-            (contract_id, signer_id, event_type, doc_hash, ip_address, user_agent, timestamp) 
-            VALUES (?, ?, ?, ?, ?, ?, NOW())
+        if (!$contract) {
+            $this->view('errors/404', [
+                'title' => 'Contract Not Found',
+                'message' => 'Contract with ID ' . $id . ' does not exist'
+            ]);
+            return;
+        }
+        
+        $isLocked = $contract['signing_state'] !== 'DRAFT';
+        
+        $versionStmt = $db->prepare("
+            SELECT version_no, file_path, saved_at 
+            FROM doc_versions 
+            WHERE contract_id = ? 
+            ORDER BY version_no DESC 
+            LIMIT 1
         ");
-        $auditStmt->execute([
-            $id,
-            $_SESSION['user_id'] ?? 'system',
-            'change_accepted',
-            null,
-            $_SERVER['REMOTE_ADDR'] ?? null,
-            $_SERVER['HTTP_USER_AGENT'] ?? null
-        ]);
+        $versionStmt->execute([$id]);
+        $latestVersion = $versionStmt->fetch();
         
-        $db->commit();
+        $filePath = $contract['file_path'];
+        if ($latestVersion && file_exists($latestVersion['file_path'])) {
+            $filePath = $latestVersion['file_path'];
+        }
+        
+        $content = '';
+        if ($filePath && file_exists($filePath)) {
+            $content = file_get_contents($filePath);
+        } else {
+            $content = '<p>Start editing your contract here...</p>';
+        }
+        
+        $contractData = [
+            'id' => $id,
+            'title' => $contract['title'],
+            'description' => $contract['description'],
+            'signing_state' => $contract['signing_state'],
+            'file_path' => $filePath,
+            'content' => $content,
+            'created_by' => $contract['created_by'],
+            'created_at' => $contract['created_at'],
+            'updated_at' => $contract['updated_at'],
+            'latest_version' => $latestVersion['version_no'] ?? 0,
+            'last_saved_at' => $latestVersion['saved_at'] ?? $contract['updated_at']
+        ];
+        
+        $this->view('contracts/editor', [
+            'contract' => $contractData,
+            'title' => 'Contract Editor'
+        ]);
+    }
+    
+    public function getChanges($id)
+    {
+        $db = \Core\Database::getInstance()->getConnection();
+        
+        $stmt = $db->prepare("
+            SELECT id, author_id, original_text, new_text, status, changed_at 
+            FROM doc_tracked_changes 
+            WHERE contract_id = ? 
+            ORDER BY changed_at DESC
+        ");
+        $stmt->execute([$id]);
+        $changes = $stmt->fetchAll();
+        
+        $stateStmt = $db->prepare("SELECT signing_state FROM contracts WHERE id = ?");
+        $stateStmt->execute([$id]);
+        $contract = $stateStmt->fetch();
+        
+        $isLocked = $contract['signing_state'] !== 'DRAFT';
         
         $this->json([
             'success' => true,
-            'message' => 'Change accepted successfully'
+            'contract_id' => $id,
+            'is_locked' => $isLocked,
+            'changes' => $changes,
+            'total' => count($changes),
+            'pending_count' => $this->countPendingChanges($db, $id)
         ]);
-        
-    } catch (\Exception $e) {
-        $db->rollBack();
-        $this->json(['success' => false, 'error' => $e->getMessage()], 500);
     }
-}
 
-public function rejectChange($id, $changeId)
+    public function acceptChange($id, $changeId)
+    {
+        $db = \Core\Database::getInstance()->getConnection();
+        
+        $db->beginTransaction();
+        
+        try {
+            $stmt = $db->prepare("
+                SELECT contract_id, original_text, new_text, status 
+                FROM doc_tracked_changes 
+                WHERE id = ? AND contract_id = ?
+            ");
+            $stmt->execute([$changeId, $id]);
+            $change = $stmt->fetch();
+            
+            if (!$change) {
+                $this->json(['success' => false, 'error' => 'Change not found'], 404);
+                return;
+            }
+            
+            if ($change['status'] !== 'pending') {
+                $this->json(['success' => false, 'error' => 'Change already processed'], 400);
+                return;
+            }
+            
+            $updateStmt = $db->prepare("
+                UPDATE doc_tracked_changes 
+                SET status = 'accepted' 
+                WHERE id = ?
+            ");
+            $updateStmt->execute([$changeId]);
+            
+            $auditStmt = $db->prepare("
+                INSERT INTO doc_signature_audit 
+                (contract_id, signer_id, event_type, doc_hash, ip_address, user_agent, timestamp) 
+                VALUES (?, ?, ?, ?, ?, ?, NOW())
+            ");
+            $auditStmt->execute([
+                $id,
+                $_SESSION['user_id'] ?? 'system',
+                'change_accepted',
+                null,
+                $_SERVER['REMOTE_ADDR'] ?? null,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            ]);
+            
+            $db->commit();
+            
+            $this->json([
+                'success' => true,
+                'message' => 'Change accepted successfully'
+            ]);
+            
+        } catch (\Exception $e) {
+            $db->rollBack();
+            $this->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function rejectChange($id, $changeId)
+    {
+        $db = \Core\Database::getInstance()->getConnection();
+        
+        $db->beginTransaction();
+        
+        try {
+            $stmt = $db->prepare("
+                SELECT contract_id, status 
+                FROM doc_tracked_changes 
+                WHERE id = ? AND contract_id = ?
+            ");
+            $stmt->execute([$changeId, $id]);
+            $change = $stmt->fetch();
+            
+            if (!$change) {
+                $this->json(['success' => false, 'error' => 'Change not found'], 404);
+                return;
+            }
+            
+            if ($change['status'] !== 'pending') {
+                $this->json(['success' => false, 'error' => 'Change already processed'], 400);
+                return;
+            }
+            
+            $updateStmt = $db->prepare("
+                UPDATE doc_tracked_changes 
+                SET status = 'rejected' 
+                WHERE id = ?
+            ");
+            $updateStmt->execute([$changeId]);
+            
+            $auditStmt = $db->prepare("
+                INSERT INTO doc_signature_audit 
+                (contract_id, signer_id, event_type, doc_hash, ip_address, user_agent, timestamp) 
+                VALUES (?, ?, ?, ?, ?, ?, NOW())
+            ");
+            $auditStmt->execute([
+                $id,
+                $_SESSION['user_id'] ?? 'system',
+                'change_rejected',
+                null,
+                $_SERVER['REMOTE_ADDR'] ?? null,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            ]);
+            
+            $db->commit();
+            
+            $this->json([
+                'success' => true,
+                'message' => 'Change rejected successfully'
+            ]);
+            
+        } catch (\Exception $e) {
+            $db->rollBack();
+            $this->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    private function countPendingChanges($db, $contractId)
+    {
+        $stmt = $db->prepare("
+            SELECT COUNT(*) as count 
+            FROM doc_tracked_changes 
+            WHERE contract_id = ? AND status = 'pending'
+        ");
+        $stmt->execute([$contractId]);
+        $result = $stmt->fetch();
+        return $result['count'] ?? 0;
+    }
+
+public function apiStore()
 {
-    $db = \Core\Database::getInstance()->getConnection();
+    // Get JSON input
+    $input = json_decode(file_get_contents('php://input'), true);
     
-    // Start transaction
-    $db->beginTransaction();
+    // Validate required fields
+    $clientName = $input['client_name'] ?? $_POST['client_name'] ?? null;
+    $clientEmail = $input['client_email'] ?? $_POST['client_email'] ?? null;
+    $title = $input['title'] ?? $_POST['title'] ?? null;
+    
+    if (!$clientName || !$clientEmail || !$title) {
+        $this->json([
+            'success' => false, 
+            'error' => 'Missing required fields: client_name, client_email, title'
+        ], 400);
+        return;
+    }
     
     try {
-        // Get the change details
-        $stmt = $db->prepare("
-            SELECT contract_id, status 
-            FROM doc_tracked_changes 
-            WHERE id = ? AND contract_id = ?
-        ");
-        $stmt->execute([$changeId, $id]);
-        $change = $stmt->fetch();
+        // Insert into database first to get contract ID
+        $sql = "INSERT INTO contracts (client_name, client_email, title, description, signing_state, created_by) 
+                VALUES (:client_name, :client_email, :title, :description, 'DRAFT', :created_by)";
         
-        if (!$change) {
-            $this->json(['success' => false, 'error' => 'Change not found'], 404);
-            return;
-        }
-        
-        if ($change['status'] !== 'pending') {
-            $this->json(['success' => false, 'error' => 'Change already processed'], 400);
-            return;
-        }
-        
-        // Update the change status
-        $updateStmt = $db->prepare("
-            UPDATE doc_tracked_changes 
-            SET status = 'rejected' 
-            WHERE id = ?
-        ");
-        $updateStmt->execute([$changeId]);
-        
-        // Write to audit log
-        $auditStmt = $db->prepare("
-            INSERT INTO doc_signature_audit 
-            (contract_id, signer_id, event_type, doc_hash, ip_address, user_agent, timestamp) 
-            VALUES (?, ?, ?, ?, ?, ?, NOW())
-        ");
-        $auditStmt->execute([
-            $id,
-            $_SESSION['user_id'] ?? 'system',
-            'change_rejected',
-            null,
-            $_SERVER['REMOTE_ADDR'] ?? null,
-            $_SERVER['HTTP_USER_AGENT'] ?? null
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([
+            'client_name' => $clientName,
+            'client_email' => $clientEmail,
+            'title' => $title,
+            'description' => $input['description'] ?? null,
+            'created_by' => $input['created_by'] ?? $_POST['created_by'] ?? 'api_user'
         ]);
         
-        $db->commit();
+        $contractId = $this->db->lastInsertId();
+        
+        // Generate document using DocumentGeneratorService
+        $docGenerator = new \Services\DocumentGeneratorService();
+        $filePath = $docGenerator->generateContract($contractId, [
+            'title' => $title,
+            'client_name' => $clientName,
+            'client_email' => $clientEmail,
+            'content' => $input['content'] ?? null,
+            'sections' => $input['sections'] ?? null,
+            'services' => $input['services'] ?? null,
+            'amount' => $input['amount'] ?? null,
+            'payment_terms' => $input['payment_terms'] ?? null,
+            'start_date' => $input['start_date'] ?? null,
+            'duration' => $input['duration'] ?? null,
+            'termination' => $input['termination'] ?? null,
+            'governing_law' => $input['governing_law'] ?? 'Rwanda',
+            'effective_date' => $input['effective_date'] ?? null
+        ]);
+        
+        // Update contract with file path
+        $updateSql = "UPDATE contracts SET file_path = :file_path WHERE id = :id";
+        $updateStmt = $this->db->prepare($updateSql);
+        $updateStmt->execute([
+            'file_path' => $filePath,
+            'id' => $contractId
+        ]);
+        
+        $versionSql = "INSERT INTO doc_versions (contract_id, version_no, saved_by, file_path, saved_at) 
+                       VALUES (:contract_id, 1, :saved_by, :file_path, NOW())";
+        $versionStmt = $this->db->prepare($versionSql);
+        $versionStmt->execute([
+            'contract_id' => $contractId,
+            'saved_by' => $input['created_by'] ?? 'system',
+            'file_path' => $filePath
+        ]);
         
         $this->json([
             'success' => true,
-            'message' => 'Change rejected successfully'
+            'message' => 'Contract created successfully',
+            'contract_id' => $contractId,
+            'contract' => [
+                'id' => $contractId,
+                'title' => $title,
+                'client_name' => $clientName,
+                'client_email' => $clientEmail,
+                'signing_state' => 'DRAFT',
+                'file_path' => $filePath,
+                'created_at' => date('Y-m-d H:i:s')
+            ]
         ]);
         
-    } catch (\Exception $e) {
-        $db->rollBack();
-        $this->json(['success' => false, 'error' => $e->getMessage()], 500);
+    } catch (PDOException $e) {
+        $this->json([
+            'success' => false, 
+            'error' => 'Database error: ' . $e->getMessage()
+        ], 500);
+    } catch (Exception $e) {
+        $this->json([
+            'success' => false, 
+            'error' => 'Error: ' . $e->getMessage()
+        ], 500);
     }
 }
 
-private function countPendingChanges($db, $contractId)
-{
-    $stmt = $db->prepare("
-        SELECT COUNT(*) as count 
-        FROM doc_tracked_changes 
-        WHERE contract_id = ? AND status = 'pending'
-    ");
-    $stmt->execute([$contractId]);
-    $result = $stmt->fetch();
-    return $result['count'] ?? 0;
-}
 }
