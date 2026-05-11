@@ -26,7 +26,9 @@ $router->get('/contracts/view/{id}', [\Controllers\ContractController::class, 'v
 $router->get('/contracts/execution-status/{id}', [\Controllers\ContractController::class, 'executionStatus']);
 $router->get('/contracts/final-pdf/{id}', [\Controllers\ContractController::class, 'finalPDF']);
 $router->get('/contracts/audit-trail/{id}', [\Controllers\ContractController::class, 'auditTrailView']);
-
+    
+// Tokenized access (no login required)
+$router->get('/access/{token}', [\Controllers\ContractController::class, 'tokenAccess']);
 // ============================================
 // TASK E1: IN-BROWSER EDITOR
 // ============================================
