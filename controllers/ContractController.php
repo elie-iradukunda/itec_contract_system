@@ -108,33 +108,82 @@ class ContractController extends Controller
         ]);
     }
 
-    public function submitForSigning($id)
-    {
-        $input = json_decode(file_get_contents('php://input'), true);
-        $signerId = $input['signer_id'] ?? $_POST['signer_id'] ?? 'staff@itec.com';
-        
-        $stmt = $this->db->prepare("SELECT id, title, signing_state FROM contracts WHERE id = ?");
-        $stmt->execute([$id]);
-        $contract = $stmt->fetch();
-        
-        if (!$contract) {
-            $this->json(['success' => false, 'error' => 'Contract not found'], 404);
-            return;
-        }
-        
-        if ($contract['signing_state'] !== 'DRAFT') {
-            $this->json([
-                'success' => false, 
-                'error' => 'Contract cannot be submitted. Current state: ' . $contract['signing_state']
-            ], 400);
-            return;
-        }
-        
-        $stateMachine = new OscarStateMachineService($id);
-        $result = $stateMachine->submitForSigning($signerId);
-        
-        $this->json($result);
+    public function tokenAccess($token)
+{
+    // echo "Token Access: {$token}"; // Debug log
+    $stmt = $this->db->prepare("
+        SELECT contract_id, recipient_email, expires_at, status 
+        FROM doc_distributions 
+        WHERE token = ?
+    ");
+    $stmt->execute([$token]);
+    $distribution = $stmt->fetch();
+    
+    if (!$distribution) {
+        $this->view('errors/404', ['message' => 'Invalid or expired link']);
+        return;
     }
+    // echo "Distribution found: Contract ID {$distribution['contract_id']}, Recipient {$distribution['recipient_email']}"; // Debug log
+    if (strtotime($distribution['expires_at']) < time()) {
+        
+        $this->view('errors/419', ['message' => 'This signing link has expired (30 days limit)']);
+        return;
+    }
+    echo "Distribution status: {$distribution['status']}"; // Debug log
+    
+    // Get contract details
+    $contractId = $distribution['contract_id'];
+    $contractStmt = $this->db->prepare("SELECT * FROM contracts WHERE id = ?");
+    $contractStmt->execute([$contractId]);
+    $contract = $contractStmt->fetch();
+    
+    // Update distribution as opened
+    $updateStmt = $this->db->prepare("
+        UPDATE doc_distributions SET opened_at = NOW(), status = 'delivered' WHERE token = ?
+    ");
+    $updateStmt->execute([$token]);
+    
+    // Show signing page
+    $this->view('contracts/sign', [
+        'contract' => $contract,
+        'token' => $token,
+        'title' => 'Sign Contract'
+    ]);
+}
+
+   public function submitForSigning($id)
+{
+    $input = json_decode(file_get_contents('php://input'), true);
+    $signerId = $input['signer_id'] ?? $_POST['signer_id'] ?? 'staff@itec.com';
+    $clientEmail = $input['client_email'] ?? $_POST['client_email'] ?? null;
+    
+    $stmt = $this->db->prepare("SELECT id, title, signing_state, client_email FROM contracts WHERE id = ?");
+    $stmt->execute([$id]);
+    $contract = $stmt->fetch();
+    
+    if (!$contract) {
+        $this->json(['success' => false, 'error' => 'Contract not found'], 404);
+        return;
+    }
+    
+    // Use client email from contract if not provided
+    if (!$clientEmail) {
+        $clientEmail = $contract['client_email'];
+    }
+    
+    if ($contract['signing_state'] !== 'DRAFT') {
+        $this->json([
+            'success' => false, 
+            'error' => 'Contract cannot be submitted. Current state: ' . $contract['signing_state']
+        ], 400);
+        return;
+    }
+    
+    $stateMachine = new OscarStateMachineService($id);
+    $result = $stateMachine->submitForSigning($signerId, $clientEmail);
+    
+    $this->json($result);
+}
 
     public function transition($id)
     {
