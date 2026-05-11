@@ -71,6 +71,18 @@ class SignatureController extends Controller
         $result = $this->signatureService->signDocument($contractId, $signerId, $role, $filePath);
         
         if ($result['success']) {
+            // If a visual signature (base64 image) was sent, save it linked to the signature record
+            $visualPath = null;
+            $signatureData = $_POST['signature_data'] ?? null;
+            if ($signatureData) {
+                try {
+                    $visualPath = $this->signatureService->saveVisualSignature((int)$contractId, $signerId, $signatureData, $result['signature_id']);
+                } catch (\Throwable $e) {
+                    // Non-fatal: log and continue (signature still valid cryptographically)
+                    error_log('Failed to save visual signature: ' . $e->getMessage());
+                }
+            }
+
             // Update contract state after successful signature
             $stateMachine = new OscarStateMachineService($contractId);
             
@@ -83,13 +95,18 @@ class SignatureController extends Controller
                 $stateResult = $stateMachine->companySign($signerId, $result['doc_hash']);
             }
             
-            $this->json([
+            $response = [
                 'success' => true,
                 'signature_id' => $result['signature_id'],
                 'doc_hash' => $result['doc_hash'],
                 'new_state' => $stateResult['new_state'] ?? null,
                 'message' => $role === 'client' ? 'Document signed by client successfully' : 'Document signed by company successfully'
-            ]);
+            ];
+            if (!empty($visualPath)) {
+                $response['visual_signature'] = $visualPath;
+            }
+
+            $this->json($response);
         } else {
             $this->json(['success' => false, 'error' => $result['error']], 500);
         }

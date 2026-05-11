@@ -8,6 +8,7 @@ $editor_config = array_merge([
     'signing_state' => 'DRAFT',
     'readonly' => false,
     'show_side_panel' => true,
+    'signatures' => [],
 ], $editor_config ?? []);
 
 $contractId = (int) $editor_config['contract_id'];
@@ -125,6 +126,34 @@ $jsConfig = [
             </button>
         </div>
         <textarea id="documentEditor" class="document-editor" <?= $state !== 'DRAFT' ? 'readonly' : '' ?>><?= ui_e($content) ?></textarea>
+        
+        <!-- SIGNATURE BLOCK - Display all signatures -->
+        <?php if (!empty($editor_config['signatures'])): ?>
+            <div class="signature-block" style="margin-top: 30px; border-top: 2px solid #ddd; padding-top: 20px;">
+                <h3 style="margin-bottom: 15px; color: #333;">Document Signatures</h3>
+                <div style="display: grid; gap: 15px;">
+                    <?php foreach ($editor_config['signatures'] as $sig): ?>
+                        <div style="background: #f9f9f9; border-left: 4px solid #007bff; padding: 12px; border-radius: 4px;">
+                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                                <div>
+                                    <strong style="display: block; margin-bottom: 4px; text-transform: capitalize;">
+                                        <?= ucfirst(str_replace('_', ' ', $sig['signer_role'])) ?>
+                                    </strong>
+                                    <span style="color: #666; font-size: 0.9rem;">Signed by: <?= htmlspecialchars($sig['signer_id']) ?></span>
+                                </div>
+                                <span style="color: #999; font-size: 0.85rem; white-space: nowrap;">
+                                    <?= date('M d, Y @ H:i', strtotime($sig['signed_at'])) ?>
+                                </span>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        <?php else: ?>
+            <div class="signature-block" style="margin-top: 30px; border-top: 2px solid #ddd; padding-top: 20px;">
+                <p style="color: #999; font-style: italic;">No signatures yet. Signatures will appear here after the contract is signed.</p>
+            </div>
+        <?php endif; ?>
     </article>
 
     <?php if ($editor_config['show_side_panel']): ?>

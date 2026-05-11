@@ -44,8 +44,14 @@ ob_start();
                 <input type="text" name="typed_signature" placeholder="Full legal name" required>
             </label>
             <div class="signature-pad signature-capture">
-                <strong>Signature capture</strong>
-                <span>The signature is recorded with the signing action.</span>
+                <strong>Draw your signature</strong>
+                <span style="display: block; margin-bottom: 10px; font-size: 0.9rem; color: #666;">Use your mouse or touch device to sign below:</span>
+                <canvas id="signaturePad" width="500" height="150" style="border: 2px solid #ddd; cursor: crosshair; background: white; display: block; margin: 10px 0; border-radius: 4px;"></canvas>
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <button type="button" class="button ghost" id="clearSignature">Clear Signature</button>
+                    <span id="signatureStatus" style="color: #999; font-size: 0.9rem;"></span>
+                </div>
+                <input type="hidden" name="signature_data" id="signatureData" value="">
             </div>
             <div class="field-span form-actions">
                 <button class="button" type="submit">Sign Digitally</button>
@@ -75,9 +81,85 @@ ob_start();
 </section>
 
 <script>
+// Initialize signature pad
+const canvas = document.getElementById('signaturePad');
+const ctx = canvas.getContext('2d');
+const clearBtn = document.getElementById('clearSignature');
+const signatureStatus = document.getElementById('signatureStatus');
+const signatureDataInput = document.getElementById('signatureData');
+
+let isDrawing = false;
+let hasSignature = false;
+
+// Resize canvas to fit container on load
+function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+}
+
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// Drawing functions
+function startDrawing(e) {
+    isDrawing = true;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+}
+
+function draw(e) {
+    if (!isDrawing) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#000';
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    hasSignature = true;
+    signatureStatus.textContent = 'Signature captured ✓';
+}
+
+function stopDrawing() {
+    isDrawing = false;
+    ctx.closePath();
+}
+
+// Mouse events
+canvas.addEventListener('mousedown', startDrawing);
+canvas.addEventListener('mousemove', draw);
+canvas.addEventListener('mouseup', stopDrawing);
+canvas.addEventListener('mouseout', stopDrawing);
+
+// Touch events (for mobile/tablet)
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDrawing(e); }, false);
+canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); }, false);
+canvas.addEventListener('touchend', (e) => { e.preventDefault(); stopDrawing(); }, false);
+
+// Clear button
+clearBtn.addEventListener('click', function() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    hasSignature = false;
+    signatureStatus.textContent = '';
+    signatureDataInput.value = '';
+});
+
+// Form submission with signature capture
 document.getElementById('digitalSignForm')?.addEventListener('submit', async function (event) {
     event.preventDefault();
     const message = document.getElementById('digitalSignMessage');
+    
+    // Capture signature as base64
+    if (hasSignature) {
+        signatureDataInput.value = canvas.toDataURL('image/png');
+    }
+    
     message.textContent = 'Signing contract...';
 
     try {
