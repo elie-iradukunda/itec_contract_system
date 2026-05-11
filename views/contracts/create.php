@@ -89,19 +89,7 @@ document.addEventListener('alpine:init', () => {
 });
 </script>
 
-<div
-    x-data="newContractEditor"
-    x-init="init()"
-    class="position-fixed"
-    style="bottom:20px; right:20px; z-index:9999;"
->
-    <button
-        @click="saveDocument()"
-        class="btn btn-primary"
-    >
-        Save Contract
-    </button>
-</div>
+
 
 <?php
 $content = ob_get_clean();
