@@ -39,6 +39,7 @@ class MigrationController extends Controller
             'CreateDocSigningOrderTable' => 78,
             'CreateDocSignatureAuditTable' => 79,
             'CreateDocDistributionsTable' => 80,
+            'EnsureContractFlowSchema' => 81,
             'CreateDocumentHashesTable' => 85,
             'CreateNotificationsTable' => 90,
             'CreateUploadedDocumentsTable' => 100,
@@ -70,7 +71,13 @@ class MigrationController extends Controller
             $name = basename($file, '.php');
             
             if (in_array($name, $executed)) {
-                echo "SKIP: {$name} (already executed)\n";
+                if ($name === 'EnsureContractFlowSchema') {
+                    require_once $file;
+                    (new $name())->up();
+                    echo "SYNC: {$name} (compatibility columns checked)\n";
+                } else {
+                    echo "SKIP: {$name} (already executed)\n";
+                }
                 continue;
             }
             

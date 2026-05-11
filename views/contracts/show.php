@@ -1,77 +1,112 @@
 <?php
-$basePath = '/itec_contract_system';
-$assetVersion = time();
-$contractId = 1;
-$pageTitle = 'Contract Details';
-$pageHeading = 'Service Agreement #1';
-$pageEyebrow = 'contract details';
-$pageLead = 'See the execution path, current obligations, distribution state, and linked pages around the working contract record.';
+require_once dirname(__DIR__) . '/components/ui.php';
+
+$contract = $contract ?? [];
+$contractId = (int) ($contract['id'] ?? 1);
+$state = strtoupper($contract['signing_state'] ?? 'DRAFT');
+$title = 'Contract Details';
 $activeNav = 'contracts';
 $headerMeta = 'contract workspace';
+$pageTitle = 'Contract Details';
+$pageHeading = $contract['title'] ?? 'Contract Details';
+$pageEyebrow = 'contract details';
+$pageLead = 'Review the current lifecycle state, available interface, and backend action path for this contract.';
 $pageActions = [
-    '<a class="button ghost" href="' . $basePath . '/contracts">Back to List</a>',
-    '<a class="button" href="' . $basePath . '/contracts/' . $contractId . '/edit">Open Editor</a>'
+    '<a class="button ghost" href="' . BASE_URL . '/contracts">Back to List</a>',
+    '<a class="button" href="' . BASE_URL . '/contracts/' . $contractId . '/editor">Open Editor</a>',
 ];
+
+$phaseMap = [
+    'DRAFT' => [
+        'label' => 'Draft & Internal Review',
+        'summary' => 'Originator edits the body, saves versions, and reviewers clear tracked changes.',
+        'action' => 'Open editor or review gate',
+        'href' => BASE_URL . '/contracts/' . $contractId . '/editor#changes',
+    ],
+    'AWAITING_CLIENT' => [
+        'label' => 'Client Signs',
+        'summary' => 'Client chooses digital signature or hard-copy return from a frozen document.',
+        'action' => 'Open client signing',
+        'href' => BASE_URL . '/contracts/sign/' . $contractId,
+    ],
+    'CLIENT_SIGNED' => [
+        'label' => 'Client Signed',
+        'summary' => 'Client signature is recorded. Backend should escalate to company execution.',
+        'action' => 'Open execution controls',
+        'href' => BASE_URL . '/contracts/' . $contractId . '/editor#signing',
+    ],
+    'AWAITING_COMPANY' => [
+        'label' => 'Company Signs + Seal',
+        'summary' => 'Company representative signs, applies seal, and final stamp/snapshot runs.',
+        'action' => 'Open company controls',
+        'href' => BASE_URL . '/contracts/' . $contractId . '/editor#signing',
+    ],
+    'FULLY_SIGNED' => [
+        'label' => 'Finalization & Distribution',
+        'summary' => 'Terminal state. Send final PDF and secure tokenized access link.',
+        'action' => 'Open distribution',
+        'href' => BASE_URL . '/contracts/' . $contractId . '/editor#distribution',
+    ],
+];
+$phase = $phaseMap[$state] ?? $phaseMap['DRAFT'];
 
 ob_start();
 ?>
 <section class="status-banner">
-    <span class="status-pill draft">Draft</span>
+    <span class="status-pill <?= ui_status_class($state) ?>"><?= ui_e(ui_status_label($state)) ?></span>
     <div>
-        <strong>Internal drafting is still open.</strong>
-        <div class="muted-copy">Client choice, body lock, company signature, and distribution steps will appear here as the backend state advances.</div>
+        <strong><?= ui_e($phase['label']) ?></strong>
+        <div class="muted-copy"><?= ui_e($phase['summary']) ?></div>
     </div>
 </section>
 
 <section class="panel-grid">
-    <article class="surface info-card"><strong>Client</strong><span>Rwanda Tech Group</span></article>
-    <article class="surface info-card"><strong>Signing path</strong><span>Client decides at submission</span></article>
-    <article class="surface info-card"><strong>Owner</strong><span>Elie</span></article>
+    <article class="surface info-card"><strong>Client</strong><span><?= ui_e($contract['client_name'] ?? $contract['company_name'] ?? 'Client pending') ?></span></article>
+    <article class="surface info-card"><strong>Email</strong><span><?= ui_e($contract['client_email'] ?? 'client@itec.local') ?></span></article>
+    <article class="surface info-card"><strong>Owner</strong><span><?= ui_e($contract['created_by_name'] ?? $contract['created_by'] ?? 'Staff') ?></span></article>
+</section>
+
+<section class="flow-board surface">
+    <div class="section-head compact">
+        <div><p>phase interfaces</p><h2>Available screens</h2></div>
+        <a href="<?= ui_e($phase['href']) ?>"><?= ui_e($phase['action']) ?></a>
+    </div>
+    <div class="gate-grid">
+        <article><strong><?= ui_icon('pencil-square') ?> Draft UI</strong><span>Editor, versions, tracked changes, review gate.</span></article>
+        <article><strong><?= ui_icon('person-check') ?> Client UI</strong><span>Token signing page, digital signature, hard-copy upload.</span></article>
+        <article><strong><?= ui_icon('shield-check') ?> Company UI</strong><span>Read-only body, company signature, seal action.</span></article>
+        <article><strong><?= ui_icon('send-check') ?> Final UI</strong><span>Final PDF preview, token link, distribution record.</span></article>
+    </div>
 </section>
 
 <section class="content-split">
-    <div class="page-stack">
-        <div class="surface">
-            <div class="section-head compact">
-                <div><p>Obligations</p><h2>Execution requirements</h2></div>
-            </div>
-            <div class="surface-pad">
-                <ul class="check-list">
-                    <li>Client signs digitally or returns a signed hard copy.</li>
-                    <li>Company signatory adds the authorized digital signature.</li>
-                    <li>The company seal is applied to the final flattened PDF.</li>
-                    <li>The audit trail records signer, time, IP, and hash chain.</li>
-                </ul>
-            </div>
+    <div class="surface">
+        <div class="section-head compact">
+            <div><p>backend routes</p><h2>Functional test targets</h2></div>
         </div>
-        <div class="surface">
-            <div class="section-head compact">
-                <div><p>Linked records</p><h2>Working assets</h2></div>
-            </div>
-            <div class="responsive-table">
-                <table>
-                    <thead>
-                        <tr><th>Asset</th><th>Status</th><th>Action</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr><td>Document body</td><td>Draft</td><td><a href="<?= $basePath ?>/contracts/<?= $contractId ?>/edit">Open editor</a></td></tr>
-                        <tr><td>Version history</td><td>Available</td><td><a href="<?= $basePath ?>/contracts/versions">View versions</a></td></tr>
-                        <tr><td>Audit trail</td><td>Prepared</td><td><a href="<?= $basePath ?>/contracts/audit-trail">View timeline</a></td></tr>
-                    </tbody>
-                </table>
-            </div>
+        <div class="responsive-table">
+            <table>
+                <thead><tr><th>Interface</th><th>Backend route</th><th>Status</th></tr></thead>
+                <tbody>
+                    <tr><td>Submit draft</td><td>/api/contracts/<?= $contractId ?>/submit</td><td>Oscar API</td></tr>
+                    <tr><td>Client signature</td><td>/api/contracts/<?= $contractId ?>/sign</td><td>Oscar API</td></tr>
+                    <tr><td>Hard copy upload</td><td>/api/contracts/<?= $contractId ?>/upload-hard-copy</td><td>Oscar API</td></tr>
+                    <tr><td>Company seal</td><td>/api/contracts/<?= $contractId ?>/seal</td><td>Oscar API</td></tr>
+                    <tr><td>Distribution</td><td>/api/contracts/<?= $contractId ?>/distribute</td><td>Oscar API</td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
     <aside class="surface surface-pad">
-        <h2>Current routing</h2>
-        <ul class="data-list">
-            <li>Drafting and tracked changes stay on the internal team.</li>
-            <li>Client execution begins once the contract is submitted.</li>
-            <li>Distribution starts only after both company obligations are complete.</li>
-        </ul>
+        <h2>Next test</h2>
+        <p class="muted-copy"><?= ui_e($phase['summary']) ?></p>
+        <div class="form-actions">
+            <a class="button" href="<?= ui_e($phase['href']) ?>"><?= ui_e($phase['action']) ?></a>
+            <a class="button ghost" href="<?= BASE_URL ?>/contracts/<?= $contractId ?>/audit">Audit</a>
+        </div>
     </aside>
 </section>
 <?php
-$pageContent = ob_get_clean();
-require __DIR__ . '/../layouts/app.php';
+$content = ob_get_clean();
+require dirname(__DIR__) . '/layouts/app.php';

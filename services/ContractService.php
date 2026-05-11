@@ -16,9 +16,9 @@ class ContractService
         $this->versionModel = $versionModel;
     }
 
-    public function getAllContracts()
+    public function getAllContracts(array $filters = [])
     {
-        return $this->contractModel->findAll();
+        return $this->contractModel->findAll($filters);
     }
 
     public function getContractById($id)
@@ -26,11 +26,23 @@ class ContractService
         return $this->contractModel->find($id);
     }
 
+    public function createContract(array $data)
+    {
+        return $this->contractModel->createDraft($data);
+    }
+
+    public function updateContract($id, array $data)
+    {
+        return $this->contractModel->updateContract($id, $data);
+    }
+
+    public function deleteContract($id)
+    {
+        return $this->contractModel->delete($id);
+    }
+
     public function getEditorData($id)
     {
-        print_r($id);
-        return null;
-        // Load contract data needed by the editor page.
         return $this->contractModel->getEditorData($id);
     }
 

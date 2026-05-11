@@ -40,6 +40,11 @@ class OscarSealService
 
     private function createSealImage()
     {
+        if (!function_exists('imagecreatetruecolor')) {
+            // GD is optional in local XAMPP; FPDI falls back to a drawn text seal when this image is absent.
+            return;
+        }
+
         $image = imagecreatetruecolor(300, 300);
 
         $white = imagecolorallocate($image, 255, 255, 255);

@@ -68,6 +68,12 @@ class Mail
 
     public function send($to, $subject, $body, $isHtml = true)
     {
+        // Local XAMPP/dev mode: keep workflow transitions moving when SMTP is not configured.
+        if (empty($this->config['username']) || empty($this->config['password'])) {
+            error_log("Mail skipped: SMTP credentials are not configured. Intended recipient: {$to}; subject: {$subject}");
+            return true;
+        }
+
         try {
             $this->mail->clearAddresses();
             $this->mail->addAddress($to);

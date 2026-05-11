@@ -31,13 +31,32 @@ $container->singleton(Database::class, function() {
     return Database::getInstance();
 });
 
+$container->bind(\Models\Contract::class, function() {
+    return new \Models\Contract();
+});
+
+$container->bind(\Models\ContractVersion::class, function() {
+    return new \Models\ContractVersion();
+});
+
+$container->bind(\Models\Client::class, function() {
+    return new \Models\Client();
+});
+
+$container->bind(\Models\AuditLog::class, function() {
+    return new \Models\AuditLog();
+});
+
 $container->singleton(Mail::class, function($container) {
     return new Mail();
 });
 
 // Register Services
 $container->bind(\Services\ContractService::class, function($container) {
-    return new \Services\ContractService();
+    return new \Services\ContractService(
+        $container->resolve(\Models\Contract::class),
+        $container->resolve(\Models\ContractVersion::class)
+    );
 });
 
 $container->bind(\Services\OscarSignatureService::class, function($container) {
@@ -56,17 +75,16 @@ $container->bind(\Services\OscarAuditService::class, function($container) {
     return new \Services\OscarAuditService();
 });
 
-$container->bind(\Services\OscarStateMachineService::class, function($container) {
-    return new \Services\OscarStateMachineService();
-});
-
 // Register Controllers
 $container->bind(\Controllers\HomeController::class, function($container) {
     return new \Controllers\HomeController($container);
 });
 
 $container->bind(\Controllers\ContractController::class, function($container) {
-    return new \Controllers\ContractController();
+    return new \Controllers\ContractController(
+        $container->resolve(\Services\ContractService::class),
+        $container->resolve(\Services\OscarAuditService::class)
+    );
 });
 
 $container->bind(\Controllers\SignatureController::class, function($container) {
@@ -78,7 +96,7 @@ $container->bind(\Controllers\AuditController::class, function($container) {
 });
 
 $container->bind(\Controllers\ClientController::class, function($container) {
-    return new \Controllers\ClientController();
+    return new \Controllers\ClientController($container->resolve(\Models\Client::class));
 });
 
 $container->bind(\Controllers\AuthController::class, function($container) {
@@ -86,7 +104,7 @@ $container->bind(\Controllers\AuthController::class, function($container) {
 });
 
 $container->bind(\Controllers\VersionController::class, function($container) {
-    return new \Controllers\VersionController();
+    return new \Controllers\VersionController($container->resolve(\Models\ContractVersion::class));
 });
 
 $container->bind(\Controllers\UploadController::class, function($container) {
@@ -102,7 +120,7 @@ $router = new Router($container);
 
 // Remove base path from URI
 $requestUri = $_SERVER['REQUEST_URI'];
-$basePath = '/itec_contract_system';
+$basePath = BASE_URL;
 if (strpos($requestUri, $basePath) === 0) {
     $requestUri = substr($requestUri, strlen($basePath));
 }
