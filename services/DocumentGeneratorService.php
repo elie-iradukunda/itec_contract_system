@@ -5,6 +5,7 @@ namespace Services;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\SimpleType\Jc;
+use ZipArchive;
 
 class DocumentGeneratorService
 {
@@ -14,7 +15,7 @@ class DocumentGeneratorService
     
     public function __construct()
     {
-        $this->storageDir = __DIR__ . '/../storage/contracts/';
+        $this->storageDir = '/../storage/contracts/';
         $this->ensureDirectoryExists();
         
         $this->companyInfo = [
@@ -39,6 +40,11 @@ class DocumentGeneratorService
         $fileName = "contract_{$contractId}.docx";
         $filePath = $this->storageDir . $fileName;
         
+        // Remove old file if exists
+        if (file_exists($filePath)) {
+            unlink($filePath);
+        }
+        
         $phpWord = new PhpWord();
         $phpWord->setDefaultFontName('Arial');
         
@@ -47,7 +53,10 @@ class DocumentGeneratorService
         $phpWord->addTitleStyle(2, ['size' => 12, 'bold' => true, 'color' => $this->primaryColor], ['spaceBefore' => 240]);
 
         $section = $phpWord->addSection([
-            'marginTop' => 1200, 'marginBottom' => 1200, 'marginLeft' => 1000, 'marginRight' => 1000,
+            'marginTop' => 1200, 
+            'marginBottom' => 1200, 
+            'marginLeft' => 1000, 
+            'marginRight' => 1000,
         ]);
         
         // --- Header Section ---
@@ -58,7 +67,7 @@ class DocumentGeneratorService
         }
         $header->addText($this->companyInfo['tagline'], ['size' => 9, 'bold' => true], ['alignment' => Jc::CENTER]);
         
-        // Bold black line in header (as seen in image)
+        // Bold black line in header
         $header->addLine([
             'width' => 480, 
             'height' => 0, 
@@ -80,8 +89,16 @@ class DocumentGeneratorService
         // --- Footer Section ---
         $this->addFooter($section);
         
+        // Save the document
         $objWriter = IOFactory::createWriter($phpWord, 'Word2007');
         $objWriter->save($filePath);
+        
+        // Validate generated file using ZipArchive
+        $zip = new ZipArchive();
+        if ($zip->open($filePath) !== true) {
+            throw new \Exception('Generated DOCX is invalid.');
+        }
+        $zip->close();
         
         return $filePath;
     }
@@ -96,6 +113,14 @@ class DocumentGeneratorService
         $table->addRow();
         $table->addCell(2500, ['bgColor' => 'F3F3F3'])->addText('Client', ['bold' => true]);
         $table->addCell(6500)->addText($this->sanitizeForXml($data['client_name']));
+        
+        $table->addRow();
+        $table->addCell(2500, ['bgColor' => 'F3F3F3'])->addText('Date', ['bold' => true]);
+        $table->addCell(6500)->addText(date('F d, Y'));
+        
+        $table->addRow();
+        $table->addCell(2500, ['bgColor' => 'F3F3F3'])->addText('Email', ['bold' => true]);
+        $table->addCell(6500)->addText($this->sanitizeForXml($data['client_email']));
     }
     
     private function addSanitizedContent($section, $data)
@@ -111,8 +136,15 @@ class DocumentGeneratorService
                 $cleanLine = $this->sanitizeForXml(trim($p));
                 if ($cleanLine !== '') {
                     $section->addText($cleanLine, ['size' => 10.5]);
+                    $section->addTextBreak(1);
                 }
             }
+        } else {
+            // Default content if none provided
+            $section->addTitle('Agreement Details', 2);
+            $section->addText('This agreement is made between the parties as described above.', ['size' => 10.5]);
+            $section->addTextBreak(1);
+            $section->addText('The parties agree to the terms and conditions outlined in this document.', ['size' => 10.5]);
         }
     }
 
@@ -126,7 +158,9 @@ class DocumentGeneratorService
     private function addSignatureSection($section, $clientName)
     {
         $section->addTextBreak(2);
-        $table = $section->addTable();
+        $section->addTitle('Signatures', 2);
+        
+        $table = $section->addTable(['borderSize' => 0]);
         $table->addRow(400);
         $table->addCell(4000, ['borderBottomSize' => 6]);
         $table->addCell(1000);
@@ -136,13 +170,23 @@ class DocumentGeneratorService
         $table->addCell(4000)->addText("Client Signature", ['size' => 9, 'bold' => true]);
         $table->addCell(1000);
         $table->addCell(4000)->addText("ITEC Solutions", ['size' => 9, 'bold' => true]);
+        
+        $table->addRow();
+        $table->addCell(4000)->addText($this->sanitizeForXml($clientName), ['size' => 9]);
+        $table->addCell(1000);
+        $table->addCell(4000)->addText("Authorized Signatory", ['size' => 9]);
+        
+        $table->addRow();
+        $table->addCell(4000)->addText("Date: _______________", ['size' => 9]);
+        $table->addCell(1000);
+        $table->addCell(4000)->addText("Date: _______________", ['size' => 9]);
     }
     
     private function addFooter($section)
     {
         $footer = $section->addFooter();
         
-        // Footer Line (Gray as seen in footer image)
+        // Footer Line 
         $footer->addLine([
             'width' => 480, 
             'height' => 0, 
@@ -161,5 +205,33 @@ class DocumentGeneratorService
         
         $footer->addTextBreak(1);
         $footer->addPreserveText('Page {PAGE} of {NUMPAGES}', ['size' => 8], $center);
+    }
+    
+    public function updateContractContent($contractId, $content)
+    {
+        $filePath = $this->storageDir . "contract_{$contractId}.docx";
+        
+        if (!file_exists($filePath)) {
+            return false;
+        }
+        
+        // Load existing document
+        $phpWord = IOFactory::load($filePath);
+        
+        // Get the first section
+        $sections = $phpWord->getSections();
+        if (empty($sections)) {
+            return false;
+        }
+        
+        // For simplicity, regenerate the document
+        $data = [
+            'title' => 'Updated Contract',
+            'client_name' => 'Client Name',
+            'client_email' => 'client@email.com',
+            'content' => $content
+        ];
+        
+        return $this->generateContract($contractId, $data);
     }
 }
