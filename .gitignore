@@ -1,3 +1,4 @@
 
 *.sh
 .envtest_oscar.php
+*.docx and *.pdf
