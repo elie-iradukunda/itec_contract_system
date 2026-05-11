@@ -139,6 +139,37 @@ class OscarSignatureService
     }
 
     /**
+     * Save a visual signature (base64 PNG data URL) to storage.
+     * If $signatureId is provided the file will include it for easier lookup.
+     * Returns the relative file path on success.
+     */
+    public function saveVisualSignature($contractId, $signerId, $dataUrl, $signatureId = null)
+    {
+        // Expect data URL like 'data:image/png;base64,....'
+        if (strpos($dataUrl, 'base64,') === false) {
+            throw new \Exception('Invalid signature data format');
+        }
+
+        list($meta, $b64) = explode('base64,', $dataUrl, 2);
+        $decoded = base64_decode($b64);
+        if ($decoded === false) {
+            throw new \Exception('Failed to decode signature image');
+        }
+
+        $sanitizedSigner = preg_replace('/[^a-zA-Z0-9]/', '_', $signerId);
+        $suffix = $signatureId ? "_{$signatureId}" : '_' . time();
+        $filename = "sig_{$contractId}_{$sanitizedSigner}{$suffix}.png";
+        $filepath = $this->signaturesDir . $filename;
+
+        $written = file_put_contents($filepath, $decoded);
+        if ($written === false) {
+            throw new \Exception('Failed to write visual signature file');
+        }
+
+        return $filepath;
+    }
+
+    /**
      * Signs a document hash using the system's private key.
      */
    public function signDocument($contractId, $signerId, $roleOrFilePath = null, $filePath = null)

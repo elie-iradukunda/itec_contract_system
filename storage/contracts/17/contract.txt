@@ -1,0 +1,26 @@
+ITEC SOFTWARE SUPPORT AGREEMENT
+
+Contract Ref: #17
+Client: Mucunguzi Trading Ltd
+Client Email: mucunguzi@gmail.com
+
+Agreement Details
+Contract title: ITEC Software Support Agreement
+Document type: Support Agreement
+Client name: Mucunguzi Trading Ltd
+Client email: mucunguzi@gmail.com
+Description: Monthly software maintenance, bug fixing, backup checks, and technical support.
+
+Contract body:
+This Software Support Agreement is made between ITEC LTD and Mucunguzi Trading Ltd.
+
+ITEC LTD will provide monthly software maintenance, bug fixing, minor updates, backup checks, and technical support.
+
+Support is available Monday to Friday from 8:00 AM to 5:00 PM, excluding public holidays.
+
+The client will pay 250,000 RWF per month. Payment is due within 7 days of invoice.
+
+This agreement runs for 12 months from the effective date. Either party may terminate with 30 days written notice.
+
+Client Signature: ____________________________
+ITEC Solutions: ____________________________

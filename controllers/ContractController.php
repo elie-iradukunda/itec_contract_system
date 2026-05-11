@@ -76,7 +76,8 @@ class ContractController extends Controller
     public function readonly($id)
     {
         $contract = $this->contractService->getEditorData((int) $id);
-        $this->view('contracts/readonly', ['contract_id' => (int) $id, 'contract' => $contract, 'title' => 'Read Only Contract']);
+        $signatures = $this->getSignaturesForContract((int) $id);
+        $this->view('contracts/readonly', ['contract_id' => (int) $id, 'contract' => $contract, 'signatures' => $signatures, 'title' => 'Read Only Contract']);
     }
 
     public function viewFinal($id)
@@ -274,9 +275,13 @@ class ContractController extends Controller
             return;
         }
 
+        // Fetch signatures for this contract
+        $signatures = $this->getSignaturesForContract((int) $id);
+
         $this->view('contracts/editor', [
             'contract_id' => (int) $id,
             'contract' => $contract,
+            'signatures' => $signatures,
             'title' => 'Contract Editor'
         ]);
     }
@@ -687,6 +692,9 @@ public function apiStore()
             return;
         }
 
+        // Fetch signatures for this contract
+        $signatures = $this->getSignaturesForContract($id);
+
         $pdf = new \TCPDF();
         $pdf->SetCreator('ITEC Contract System');
         $pdf->SetTitle($contract['title']);
@@ -694,12 +702,92 @@ public function apiStore()
         $pdf->SetFont('helvetica', '', 11);
         $pdf->writeHTML('<h1>' . htmlspecialchars($contract['title']) . '</h1>' . ($contract['content'] ?? ''), true, false, true, false, '');
 
-        if ($printReady) {
-            $pdf->Ln(12);
-            $pdf->Cell(0, 8, 'Client Signature: ____________________________    Date: _______________', 0, 1);
+        // Add textual signature section as fallback
+        $pdf->Ln(12);
+        $pdf->SetFont('helvetica', 'B', 10);
+        $pdf->Cell(0, 6, 'SIGNATURES:', 0, 1);
+        $pdf->SetFont('helvetica', '', 9);
+        $pdf->Ln(2);
+
+        // Reserve space for signature images
+        $startY = $pdf->GetY();
+        $pdf->Cell(0, 5, '', 0, 1);
+
+        // Determine signatures directory
+        $signDir = __DIR__ . '/../storage/signatures/';
+
+        // For layout, left column = client, right column = company rep
+        $client = null;
+        $company = null;
+        foreach ($signatures as $s) {
+            if ($s['signer_role'] === 'client') $client = $s;
+            if ($s['signer_role'] === 'company_rep') $company = $s;
+        }
+
+        $imgWidth = 60; // mm approx
+        $imgHeight = 25; // mm approx
+
+        // Y position to place images
+        $yPos = $pdf->GetY() + 6;
+
+        // Place client signature image if present
+        if ($client) {
+            $pattern = $signDir . 'sig_' . $id . '_*_' . $client['id'] . '.png';
+            $files = glob($pattern);
+            if (!empty($files)) {
+                $img = $files[0];
+                $pdf->Image($img, 20, $yPos, $imgWidth, $imgHeight, 'PNG');
+                $pdf->SetXY(20, $yPos + $imgHeight + 2);
+                $pdf->Cell(0, 5, 'Client: ' . htmlspecialchars($client['signer_id']) . '  -  ' . date('M d, Y', strtotime($client['signed_at'])), 0, 1);
+            } else {
+                $pdf->SetXY(20, $yPos + $imgHeight + 2);
+                $pdf->Cell(0, 5, 'Client Signature: ______________________', 0, 1);
+            }
+        } else {
+            $pdf->SetXY(20, $yPos + $imgHeight + 2);
+            $pdf->Cell(0, 5, 'Client Signature: ______________________', 0, 1);
+        }
+
+        // Place company signature image if present (right side)
+        if ($company) {
+            $pattern = $signDir . 'sig_' . $id . '_*_' . $company['id'] . '.png';
+            $files = glob($pattern);
+            if (!empty($files)) {
+                $img = $files[0];
+                $pdf->Image($img, 120, $yPos, $imgWidth, $imgHeight, 'PNG');
+                $pdf->SetXY(120, $yPos + $imgHeight + 2);
+                $pdf->Cell(0, 5, 'Company Rep: ' . htmlspecialchars($company['signer_id']) . '  -  ' . date('M d, Y', strtotime($company['signed_at'])), 0, 1);
+            } else {
+                $pdf->SetXY(120, $yPos + $imgHeight + 2);
+                $pdf->Cell(0, 5, 'Company Rep Signature: ______________________', 0, 1);
+            }
+        } else {
+            $pdf->SetXY(120, $yPos + $imgHeight + 2);
+            $pdf->Cell(0, 5, 'Company Rep Signature: ______________________', 0, 1);
+        }
+
+        // Optionally overlay company seal if available (look for 'seal_{$id}.png')
+        $sealPattern = $signDir . 'seal_' . $id . '.png';
+        $sealFiles = glob($sealPattern);
+        if (!empty($sealFiles)) {
+            $seal = $sealFiles[0];
+            // place seal centered near top-right of first page
+            $pdf->Image($seal, 150, 20, 30, 30, 'PNG');
         }
 
         $pdf->Output('contract-' . $id . '.pdf', 'I');
+    }
+
+    private function getSignaturesForContract($contractId)
+    {
+        $stmt = $this->db->prepare("
+            SELECT id, signer_id, signer_role, signed_at 
+            FROM doc_signatures 
+            WHERE contract_id = ? 
+            ORDER BY signed_at ASC
+        ");
+        $stmt->execute([$contractId]);
+        return $stmt->fetchAll() ?: [];
     }
 
     private function runTargetTransition(OscarStateMachineService $stateMachine, $targetState, $signerId)

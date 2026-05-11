@@ -18,6 +18,7 @@ $editor_config = [
     'signing_state' => $contract['signing_state'] ?? 'DRAFT',
     'readonly' => ($contract['signing_state'] ?? 'DRAFT') !== 'DRAFT',
     'show_side_panel' => true,
+    'signatures' => $signatures ?? [],
 ];
 
 require dirname(__DIR__) . '/components/contract-editor.php';

@@ -24,6 +24,7 @@ $router->post('/contracts/update/{id}', [\Controllers\ContractController::class,
 $router->get('/contracts/review/{id}', [\Controllers\ContractController::class, 'review']);
 $router->get('/contracts/{id}/review', [\Controllers\ContractController::class, 'review']);
 $router->get('/contracts/readonly/{id}', [\Controllers\ContractController::class, 'readonly']);
+$router->get('/contracts/{id}/readonly', [\Controllers\ContractController::class, 'readonly']);
 $router->get('/contracts/view/{id}', [\Controllers\ContractController::class, 'viewFinal']);
 $router->get('/contracts/execution-status/{id}', [\Controllers\ContractController::class, 'executionStatus']);
 $router->get('/contracts/final-pdf/{id}', [\Controllers\ContractController::class, 'finalPDF']);
