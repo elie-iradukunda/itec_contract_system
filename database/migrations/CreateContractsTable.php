@@ -9,7 +9,8 @@ class CreateContractsTable extends Migration
         $this->db->exec("
             CREATE TABLE IF NOT EXISTS contracts (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                client_id INT NOT NULL,
+                client_name VARCHAR(255) NOT NULL,
+                client_email VARCHAR(255) NOT NULL,
                 title VARCHAR(255) NOT NULL,
                 description TEXT,
                 file_path VARCHAR(500),
@@ -17,11 +18,9 @@ class CreateContractsTable extends Migration
                 client_signed_at TIMESTAMP NULL,
                 company_signed_at TIMESTAMP NULL,
                 finalized_at TIMESTAMP NULL,
-                created_by INT NOT NULL,
+                created_by VARCHAR(255),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
-                FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
         ");
     }
