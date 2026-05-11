@@ -9,7 +9,7 @@ $headerMeta = 'review workspace';
 $pageTitle = 'Review Contract';
 $pageHeading = $contract['title'] ?? 'Review Workspace';
 $pageEyebrow = 'legal and finance review';
-$pageLead = 'Review tracked changes and submit the approved draft for client execution.';
+$pageLead = 'Clear tracked changes, confirm the contract is ready, and release the approved draft for client signing.';
 $pageActions = [
     '<a class="button ghost" href="' . BASE_URL . '/contracts/' . $contractId . '/editor#versions">Versions</a>',
     '<a class="button" href="' . BASE_URL . '/contracts/' . $contractId . '/editor#changes">Open Change Panel</a>',
@@ -43,7 +43,7 @@ ob_start();
         </article>
         <article>
             <strong><?= ui_icon('send') ?> Submit</strong>
-            <span>Oscar API moves DRAFT to AWAITING_CLIENT and starts execution.</span>
+            <span>The approved draft moves to client signing and the body becomes locked.</span>
         </article>
     </div>
 </section>
@@ -54,7 +54,7 @@ ob_start();
             <div class="section-head compact"><div><p>focus areas</p><h2>Reviewer checklist</h2></div></div>
             <div class="surface-pad">
                 <ul class="check-list">
-                    <li>Confirm commercial clauses match the financing terms.</li>
+            <li>Confirm commercial clauses match the agreed terms.</li>
                     <li>Accept or reject all pending tracked changes.</li>
                     <li>Verify client and company signature blocks are present.</li>
                     <li>Submit for signing only after the document is approved.</li>
@@ -75,7 +75,7 @@ ob_start();
         <ul class="bullet-list">
             <li>No unresolved drafting changes remain before submission.</li>
             <li>The client path is clear without staff intervention.</li>
-            <li>Company signatory and seal steps are ready for the locked document.</li>
+            <li>Company signatory and seal steps are ready once the client signs.</li>
         </ul>
     </aside>
 </section>

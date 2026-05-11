@@ -12,6 +12,34 @@ body { margin: 0; color: #26384d; background: #f3f6fb; font-family: "Segoe UI", 
 .nav a { height: 100%; display: flex; align-items: center; color: #8a94a6; text-decoration: none; font-size: 16px; }
 .nav a.active { color: #3578f6; border-bottom: 1px solid #3578f6; }
 .page { max-width: 100%; margin: 0 auto; padding: 14px 24px 22px; }
+.create-hero { display: flex; justify-content: space-between; gap: 24px; align-items: center; max-width: 1480px; margin: 10px auto 16px; padding: 24px; }
+.create-hero p { margin: 0 0 7px; color: #8a94a6; font-size: 13px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+.create-hero h1 { margin-bottom: 8px; font-size: 32px; }
+.create-hero span { display: block; max-width: 760px; color: #657086; line-height: 1.6; }
+.create-guide { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; max-width: 1480px; margin: 0 auto 16px; }
+.guide-card { display: flex; gap: 13px; align-items: center; min-height: 88px; padding: 16px; }
+.guide-card > span { width: 40px; height: 40px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; color: #117d71; background: #e9f8ef; }
+.guide-card strong { display: block; margin-bottom: 4px; color: #183655; font-size: 16px; }
+.guide-card small { color: #657086; line-height: 1.4; }
+.create-contract-page { max-width: 1480px; margin: 0 auto; }
+.create-contract-page .titlebar { margin-bottom: 14px; padding: 18px 20px; border: 1px solid #d8dee8; border-radius: 6px; background: #fff; }
+.create-contract-page .titlebar p { color: #117d71; font-size: 12px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.create-contract-page .titlebar h1 { font-size: 24px; }
+.create-contract-page #contractCreateForm { grid-template-columns: 1.1fr .8fr 1fr 1fr; gap: 14px; margin-bottom: 16px; padding: 18px; border-radius: 6px; }
+.create-contract-page #contractCreateForm .field-span { grid-column: 1 / -1; }
+.create-contract-page #contractCreateForm label { min-width: 0; }
+.create-contract-page #contractCreateForm input,
+.create-contract-page #contractCreateForm select,
+.create-contract-page #contractCreateForm textarea { border-radius: 5px; }
+.create-contract-page .execution-rail { margin-bottom: 16px; }
+.create-contract-page .execution-step:not(:first-child) { opacity: .74; }
+.create-contract-page .workspace { grid-template-columns: 1fr; }
+.create-contract-page .editor-card { border-radius: 6px; }
+.create-contract-page .toolbar { background: #fbfcfe; }
+.create-contract-page .toolbar strong { font-size: 18px; }
+.create-contract-page .toolbar > button { min-width: 184px; font-weight: 800; }
+.create-contract-page .document-editor { min-height: 620px; }
+.create-contract-page .tox.tox-tinymce { min-height: 620px; }
 .titlebar { display: flex; justify-content: space-between; gap: 20px; align-items: end; margin-bottom: 10px; }
 .titlebar p { margin: 0 0 8px; color: #8a94a6; }
 h1 { margin: 0; color: #183655; font-size: 28px; font-weight: 600; }
@@ -136,6 +164,8 @@ h1 { margin: 0; color: #183655; font-size: 28px; font-weight: 600; }
 @media (max-width: 760px) {
     .topbar, .nav { padding-inline: 20px; }
     .nav { gap: 18px; overflow-x: auto; }
+    .create-hero { align-items: stretch; flex-direction: column; margin-top: 0; }
+    .create-guide, .create-contract-page #contractCreateForm { grid-template-columns: 1fr; }
     .titlebar, .toolbar { align-items: stretch; flex-direction: column; }
     .workspace { grid-template-columns: 1fr; }
     .execution-rail, .phase-action-grid { grid-template-columns: 1fr; }

@@ -191,6 +191,7 @@ class EnsureContractFlowSchema extends Migration
         $this->addColumn('doc_signatures', 'signer_role', "VARCHAR(50) NULL");
         $this->addColumn('doc_signatures', 'signature_file_path', "VARCHAR(500) NULL");
         $this->addColumn('doc_signatures', 'snapshot_file_path', "VARCHAR(500) NULL");
+        $this->addColumn('doc_signatures', 'signature_algorithm', "VARCHAR(50) DEFAULT 'SHA256'");
         $this->modifyColumn('doc_signatures', 'doc_id', "INT NULL");
         $this->dropForeignKeysForColumn('doc_signatures', 'signer_id');
         $this->modifyColumn('doc_signatures', 'signer_id', "VARCHAR(255) NULL");
@@ -274,6 +275,7 @@ class EnsureContractFlowSchema extends Migration
         $this->addColumn('doc_distributions', 'contract_id', "INT NULL");
         $this->addColumn('doc_distributions', 'doc_id', "INT NULL");
         $this->addColumn('doc_distributions', 'sent_at', "TIMESTAMP NULL");
+        $this->addColumn('doc_distributions', 'status', "VARCHAR(30) DEFAULT 'pending'");
         $this->modifyColumn('doc_distributions', 'doc_id', "INT NULL");
         $this->modifyColumn('doc_distributions', 'token', "VARCHAR(255) NOT NULL");
         $this->db->exec("UPDATE doc_distributions SET contract_id = doc_id WHERE contract_id IS NULL AND doc_id IS NOT NULL");

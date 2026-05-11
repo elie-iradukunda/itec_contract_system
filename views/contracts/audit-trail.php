@@ -11,7 +11,7 @@ $pageEyebrow = 'chain of custody';
 $pageLead = 'Track who changed, reviewed, signed, sealed, and distributed the contract.';
 $pageActions = [
     '<a class="button ghost" href="' . BASE_URL . '/contracts/show/' . $contractId . '">Contract Details</a>',
-    '<a class="button" href="' . BASE_URL . '/api/contracts/' . $contractId . '/verify">Verify Signatures</a>',
+    '<a class="button" href="' . BASE_URL . '/api/contracts/' . $contractId . '/audit/export">Download Audit CSV</a>',
 ];
 
 ob_start();
@@ -25,7 +25,7 @@ ob_start();
 <section class="surface">
     <div class="section-head compact"><div><p>event log</p><h2>Full activity timeline</h2></div></div>
     <ul id="auditList" class="audit-list">
-        <li><strong>Loading</strong><span>Reading audit trail from the backend.</span></li>
+        <li><strong>Loading</strong><span>Reading the contract activity trail.</span></li>
     </ul>
 </section>
 

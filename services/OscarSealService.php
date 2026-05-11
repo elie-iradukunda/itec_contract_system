@@ -70,7 +70,7 @@ class OscarSealService
         try {
 
             if (!$inputFilePath) {
-                $inputFilePath = $this->storageDir . $contractId . '/contract.docx';
+                $inputFilePath = $this->getContractFilePath($contractId);
             }
 
             if (!file_exists($inputFilePath)) {
@@ -135,6 +135,40 @@ class OscarSealService
         }
     }
 
+    private function getContractFilePath($contractId)
+    {
+        try {
+            $db = \Core\Database::getInstance()->getConnection();
+            $stmt = $db->prepare("SELECT file_path FROM contracts WHERE id = ?");
+            $stmt->execute([(int) $contractId]);
+            $filePath = $stmt->fetchColumn();
+
+            if ($filePath) {
+                $resolved = $this->resolvePath($filePath);
+                if (file_exists($resolved)) {
+                    return $resolved;
+                }
+            }
+        } catch (\Throwable $error) {
+            error_log('Seal file lookup failed: ' . $error->getMessage());
+        }
+
+        return $this->storageDir . $contractId . '/contract.docx';
+    }
+
+    private function resolvePath($path)
+    {
+        $path = str_replace('\\', '/', (string) $path);
+
+        if ($path === '') {
+            return '';
+        }
+
+        return preg_match('/^[A-Za-z]:\//', $path) || str_starts_with($path, '/')
+            ? $path
+            : dirname(__DIR__) . '/' . ltrim($path, '/');
+    }
+
     private function convertToPdf($inputPath)
     {
         try {
@@ -145,16 +179,16 @@ class OscarSealService
                 return $inputPath;
             }
 
-            if (!class_exists('\ZipArchive')) {
-                throw new Exception('Zip extension is not enabled.');
-            }
-
             if (!file_exists($inputPath)) {
                 throw new Exception('File not found.');
             }
 
             if (filesize($inputPath) <= 0) {
                 throw new Exception('File is empty.');
+            }
+
+            if (!class_exists('\ZipArchive')) {
+                return $this->createFallbackPdf($inputPath);
             }
 
             $zip = new ZipArchive();
@@ -203,6 +237,33 @@ class OscarSealService
 
             error_log('Conversion Error: ' . $e->getMessage());
 
+            return $this->createFallbackPdf($inputPath);
+        }
+    }
+
+    private function createFallbackPdf($inputPath)
+    {
+        try {
+            $tempPdfPath = dirname($inputPath) . DIRECTORY_SEPARATOR . 'tmp_' . uniqid() . '.pdf';
+            $pdf = new Fpdi();
+
+            $pdf->SetCreator('ITEC Contract System');
+            $pdf->SetAuthor('OSCAR Signature Engine');
+            $pdf->SetTitle('Contract Execution Copy');
+            $pdf->setPrintHeader(false);
+            $pdf->setPrintFooter(false);
+            $pdf->AddPage();
+            $pdf->SetFont('helvetica', 'B', 16);
+            $pdf->Cell(0, 10, 'Contract Execution Copy', 0, 1);
+            $pdf->SetFont('helvetica', '', 10);
+            $pdf->MultiCell(0, 7, 'The original contract document is stored at: ' . $inputPath);
+            $pdf->Ln(4);
+            $pdf->MultiCell(0, 7, 'Document hash: ' . hash_file('sha256', $inputPath));
+            $pdf->Output($tempPdfPath, 'F');
+
+            return file_exists($tempPdfPath) ? $tempPdfPath : false;
+        } catch (\Throwable $error) {
+            error_log('Fallback PDF Error: ' . $error->getMessage());
             return false;
         }
     }

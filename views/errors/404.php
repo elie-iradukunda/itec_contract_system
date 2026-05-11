@@ -4,7 +4,7 @@ $assetVersion = time();
 $pageTitle = '404 Not Found';
 $pageHeading = 'Page Not Found';
 $pageEyebrow = 'missing destination';
-$pageLead = 'The link may be outdated, incomplete, or not yet connected to the contract workflow backend.';
+$pageLead = 'The link may be outdated, incomplete, or unavailable in the contract workspace.';
 
 ob_start();
 ?>

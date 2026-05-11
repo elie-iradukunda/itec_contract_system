@@ -8,7 +8,7 @@ $headerMeta = 'client execution';
 $pageTitle = 'Digital Signing';
 $pageHeading = 'Digital Signing';
 $pageEyebrow = 'client execution path';
-$pageLead = 'Choose digital signing or download a hard copy PDF for physical execution.';
+$pageLead = 'Choose a signing path for the locked client copy.';
 $pageActions = [
     '<a class="button ghost" href="' . BASE_URL . '/clients/portal">Back to Client Portal</a>',
     '<a class="button" href="' . BASE_URL . '/contracts/' . $contractId . '/editor#signing">Open Contract</a>',
@@ -23,29 +23,29 @@ ob_start();
         <span>The body is frozen. The client can sign digitally or complete the hard-copy path without changing contract text.</span>
     </div>
     <div class="signing-stage-state">
-        <strong>Next backend state</strong>
-        <span>AWAITING_COMPANY</span>
+        <strong>After client signs</strong>
+        <span>Company execution</span>
     </div>
 </section>
 
 <section class="content-split">
     <div class="surface surface-pad execution-card">
         <div class="section-head compact no-border"><div><p>digital signature</p><h2>Portal signing</h2></div></div>
-        <p class="muted-copy">By signing, the client confirms the contract body is accepted exactly as presented.</p>
+        <p class="muted-copy">By signing, the client confirms the locked contract body is accepted exactly as presented.</p>
         <form id="digitalSignForm" class="form-grid" data-sign-url="<?= BASE_URL ?>/api/contracts/<?= $contractId ?>/sign">
-            <!-- Feature E4: this form calls the existing digital signature endpoint and lets the backend lock the body. -->
+            <!-- Feature E4: this form records the client signature and keeps the body locked. -->
             <input type="hidden" name="role" value="client">
             <label class="field-span">
                 <span>Signer email</span>
                 <input type="email" name="signer_id" value="client@itec.local" required>
             </label>
             <label class="field-span">
-                <span>Typed signature</span>
+            <span>Full legal name</span>
                 <input type="text" name="typed_signature" placeholder="Full legal name" required>
             </label>
             <div class="signature-pad signature-capture">
                 <strong>Signature capture</strong>
-                <span>Typed name is stored with the digital signing action.</span>
+                <span>The signature is recorded with the signing action.</span>
             </div>
             <div class="field-span form-actions">
                 <button class="button" type="submit">Sign Digitally</button>
@@ -67,7 +67,7 @@ ob_start();
             <div class="section-head compact no-border"><div><p>after signing</p><h2>Company handoff</h2></div></div>
             <div class="handoff-list">
                 <span><?= ui_icon('lock-fill') ?> Body remains frozen</span>
-                <span><?= ui_icon('envelope') ?> Company rep receives the next action</span>
+                <span><?= ui_icon('envelope') ?> Company representative receives the next action</span>
                 <span><?= ui_icon('fingerprint') ?> Signature hash is stored in audit trail</span>
             </div>
         </div>

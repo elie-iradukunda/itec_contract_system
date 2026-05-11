@@ -62,7 +62,7 @@ $assetVersion = time();
             <div>
                 <p>secure client signing</p>
                 <h1><?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?></h1>
-                <span>Choose digital signing or complete the hard-copy path. The contract body is frozen for execution.</span>
+                <span>Choose digital signing or complete the hard-copy path. The contract body is locked for signing.</span>
             </div>
             <div class="client-status">
                 <strong>Current state</strong>
@@ -88,7 +88,7 @@ $assetVersion = time();
             <aside class="sign-choice-stack">
                 <article class="sign-card" data-method-card="digital">
                     <h2><i class="bi bi-pen" aria-hidden="true"></i> Digital signature</h2>
-                    <p>Sign directly in the portal. The backend records the signature hash and moves the contract to company execution.</p>
+                    <p>Sign directly in the portal. Your signature is recorded and the contract moves to company execution.</p>
                     <button type="button" data-method="digital">Sign digitally</button>
                 </article>
 
@@ -220,7 +220,7 @@ $assetVersion = time();
                 });
                 const result = await response.json();
                 if (!response.ok || !result.success) throw new Error(result.error || result.message || 'Signing failed');
-                showMessage('success', 'Contract signed successfully. The company execution step is now active.');
+                showMessage('success', 'Contract signed successfully. Company execution is now active.');
                 document.getElementById('digitalPanel').innerHTML = '<div class="message-area"><div class="success">Thank you. Your digital signature has been recorded.</div></div>';
             } catch (error) {
                 showMessage('error', error.message || 'Signing failed.');

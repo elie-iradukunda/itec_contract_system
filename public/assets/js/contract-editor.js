@@ -250,7 +250,7 @@
 
         if (signatureActionHint) {
             signatureActionHint.textContent = isDraft
-                ? 'Signature and seal blocks activate after the backend records the first signing state change.'
+                ? 'Signature and seal actions activate after signing begins.'
                 : isFinal
                     ? 'Execution is complete. Use Distribution to send the final PDF and read-only portal link.'
                     : canSign
@@ -266,7 +266,7 @@
                 : currentState === 'AWAITING_CLIENT'
                     ? 'Client execution is open. Choose digital signing or generate the hard-copy packet.'
                     : currentState === 'CLIENT_SIGNED'
-                        ? 'Client signature was recorded. The backend is ready to escalate to company signing.'
+                        ? 'Client signature was recorded. Company signing is ready.'
                         : canSeal
                             ? 'Company representative can sign and apply the seal. Final PDF generation follows.'
                             : isFinal
@@ -285,7 +285,7 @@
             finalPdfPreview.setAttribute('aria-disabled', isFinal ? 'false' : 'true');
         }
         if (distributionMessage && !isFinal) {
-            distributionMessage.textContent = 'Distribution unlocks when the backend reports FULLY_SIGNED.';
+            distributionMessage.textContent = 'Distribution unlocks after the company completes signing.';
             distributionMessage.className = '';
         }
         if (!isFinal) distributionResult?.classList.add('hidden');

@@ -8,7 +8,7 @@ $headerMeta = 'hard copy workflow';
 $pageTitle = 'Upload Signed Copy';
 $pageHeading = 'Upload Returned Hard Copy';
 $pageEyebrow = 'staff hard copy workflow';
-$pageLead = 'Attach the signed scan after the client signs a physical copy.';
+$pageLead = 'Upload the returned signed scan so the contract can move to company execution.';
 $pageActions = [
     '<a class="button ghost" href="' . BASE_URL . '/contracts/' . $contractId . '/editor#signing">Back to Contract</a>',
 ];
@@ -28,7 +28,7 @@ ob_start();
         </label>
         <label>
             <span>Checked by</span>
-            <input type="text" name="checked_by" value="Elie">
+            <input type="text" name="checked_by" value="Staff reviewer">
         </label>
         <label class="field-span">
             <span>Verification notes</span>

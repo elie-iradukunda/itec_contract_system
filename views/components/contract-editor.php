@@ -67,19 +67,19 @@ $jsConfig = [
 <section class="execution-rail" aria-label="Contract execution phases">
     <article class="execution-step" data-execution-state="DRAFT">
         <span><?= ui_icon('file-earmark-text') ?></span>
-        <div><strong>Draft</strong><small>Edit body, save versions, track changes.</small></div>
+        <div><strong>Draft</strong><small>Edit, save versions, and review changes.</small></div>
     </article>
     <article class="execution-step" data-execution-state="AWAITING_CLIENT">
         <span><?= ui_icon('person-check') ?></span>
-        <div><strong>Client</strong><small>Frozen body, digital or hard copy signing.</small></div>
+        <div><strong>Client</strong><small>Locked body with digital or hard-copy signing.</small></div>
     </article>
     <article class="execution-step" data-execution-state="AWAITING_COMPANY">
         <span><?= ui_icon('shield-check') ?></span>
-        <div><strong>Company</strong><small>Representative signs, seal and stamp apply.</small></div>
+        <div><strong>Company</strong><small>Representative signature, seal, and approval stamp.</small></div>
     </article>
     <article class="execution-step" data-execution-state="FULLY_SIGNED">
         <span><?= ui_icon('send-check') ?></span>
-        <div><strong>Final</strong><small>PDF snapshot, token link, distribution record.</small></div>
+        <div><strong>Final</strong><small>Final PDF, secure link, and distribution record.</small></div>
     </article>
 </section>
 
@@ -150,7 +150,7 @@ $jsConfig = [
 
             <section class="panel-section" data-panel-section="signing">
                 <!-- Feature E4: client choice and hard-copy upload use the existing signing endpoints. -->
-                <div class="panel-header"><h2>Execution command center</h2><small id="phaseInstruction">Draft can be submitted once review is complete.</small></div>
+                <div class="panel-header"><h2>Signing workflow</h2><small id="phaseInstruction">Send the approved draft to the client when review is complete.</small></div>
                 <div class="signing-summary">
                     <div class="lock-status">
                         <span id="lockPill" class="lock-pill <?= $state === 'DRAFT' ? 'draft' : 'locked' ?>">Draft editable</span>
@@ -162,22 +162,22 @@ $jsConfig = [
                     </div>
                 </div>
                 <div class="signature-actions">
-                    <h3>Execution blocks</h3>
+                    <h3>Signature and seal</h3>
                     <a id="signatureAction" class="signature-action" href="<?= ui_e($jsConfig['signUrl'] ?? '#') ?>">Open signature block</a>
                     <a id="sealAction" class="signature-action" href="#">Apply company seal</a>
-                    <small id="signatureActionHint">Signature and seal blocks activate after execution starts.</small>
+                    <small id="signatureActionHint">These actions become available as the contract moves through signing.</small>
                 </div>
                 <form id="signedCopyForm" class="upload-box" enctype="multipart/form-data">
                     <label for="signedCopyFile">Returned hard-copy scan</label>
                     <input id="signedCopyFile" name="signed_copy" type="file" accept=".pdf,.png,.jpg,.jpeg">
                     <button type="submit">Upload signed scan</button>
-                    <small id="uploadMessage">Attach the scan after a client signs physically.</small>
+                    <small id="uploadMessage">Attach the scan after the client signs a printed copy.</small>
                 </form>
             </section>
 
             <section class="panel-section" data-panel-section="distribution">
-                <!-- Feature E5: distribution unlocks only after the backend reports FULLY_SIGNED. -->
-                <div class="panel-header"><h2>Finalization</h2><small>Unlocked only after FULLY_SIGNED.</small></div>
+                <!-- Feature E5: distribution unlocks after company execution is complete. -->
+                <div class="panel-header"><h2>Final distribution</h2><small>Available after the contract is fully signed.</small></div>
                 <form id="distributionForm" class="distribution-box">
                     <label for="recipientEmail">Client email</label>
                     <input id="recipientEmail" name="recipient_email" type="email" placeholder="client@example.com">

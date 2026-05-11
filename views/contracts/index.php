@@ -7,7 +7,7 @@ $headerMeta = 'contract workspace';
 $pageTitle = 'Contracts';
 $pageHeading = 'Contracts';
 $pageEyebrow = 'contract lifecycle';
-$pageLead = '';
+$pageLead = 'Manage every contract from first draft through client signing, company execution, sealing, and final distribution.';
 $pageActions = [
     '<a class="button" href="' . BASE_URL . '/contracts/create">' . ui_icon('plus-lg') . ' New Contract</a>',
 ];
@@ -32,13 +32,13 @@ ob_start();
 <section class="flow-board surface" aria-label="Contract system flow">
     <div class="section-head compact">
         <div><p>execution map</p><h2>Draft to final distribution</h2></div>
-        <span class="flow-note">Oscar API powered</span>
+        <span class="flow-note">ready for live testing</span>
     </div>
     <div class="phase-grid">
         <article class="phase-card" data-phase-state="DRAFT">
             <span class="phase-index">1</span>
             <strong>Draft & Review</strong>
-            <small>Editable body, versions, tracked changes, reviewer decisions.</small>
+            <small>Draft the body, capture versions, and clear internal review before signing starts.</small>
             <div class="phase-actions">
                 <span>Create</span><span>Save version</span><span>Submit</span>
             </div>
@@ -46,7 +46,7 @@ ob_start();
         <article class="phase-card" data-phase-state="AWAITING_CLIENT">
             <span class="phase-index">2</span>
             <strong>Client Signs</strong>
-            <small>Frozen document with digital signature or hard-copy upload path.</small>
+            <small>Send a locked document to the client for digital signing or hard-copy return.</small>
             <div class="phase-actions">
                 <span>Portal sign</span><span>Print PDF</span><span>Upload scan</span>
             </div>
@@ -54,7 +54,7 @@ ob_start();
         <article class="phase-card" data-phase-state="AWAITING_COMPANY">
             <span class="phase-index">3</span>
             <strong>Company + Seal</strong>
-            <small>Company representative signs, applies seal, and burns approval stamp.</small>
+            <small>Complete company execution with signature, seal, approval stamp, and snapshot.</small>
             <div class="phase-actions">
                 <span>Company sign</span><span>Seal</span><span>Snapshot</span>
             </div>
@@ -62,7 +62,7 @@ ob_start();
         <article class="phase-card" data-phase-state="FULLY_SIGNED">
             <span class="phase-index">4</span>
             <strong>Final Distribution</strong>
-            <small>Terminal state with final PDF, secure link, and audit record.</small>
+            <small>Share the completed contract with a secure link and permanent audit trail.</small>
             <div class="phase-actions">
                 <span>Final PDF</span><span>Token link</span><span>Email</span>
             </div>
@@ -120,12 +120,12 @@ ob_start();
         <dl class="detail-list">
             <div><dt>Client</dt><dd id="detailClient">-</dd></div>
             <div><dt>Document type</dt><dd id="detailType">-</dd></div>
-            <div><dt>Storage path</dt><dd id="detailPath">-</dd></div>
+            <div><dt>Document</dt><dd id="detailPath">-</dd></div>
             <div><dt>Next action</dt><dd id="detailAction">-</dd></div>
         </dl>
         <div class="next-action-panel">
             <strong id="detailPhaseTitle">Lifecycle phase</strong>
-            <span id="detailPhaseCopy">Select a contract to see the required backend action.</span>
+            <span id="detailPhaseCopy">Select a contract to see the next step.</span>
         </div>
         <div class="timeline">
             <span class="timeline-step" data-state="DRAFT">Draft</span>

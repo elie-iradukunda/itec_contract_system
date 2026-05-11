@@ -44,7 +44,7 @@
             owner: contract.owner_name || contract.created_by_name || contract.owner || 'Elie',
             updated: contract.updated_at || contract.created_at || '',
             status: status,
-            path: contract.file_path || 'No file attached',
+            path: contract.file_path ? 'Document generated' : 'No document generated',
             description: contract.description || ''
         };
     }
@@ -71,9 +71,9 @@
 
     function nextAction(contract) {
         return {
-            DRAFT: 'Submit draft for client signing',
+            DRAFT: 'Review the draft and send it to the client',
             AWAITING_CLIENT: 'Client chooses digital or hard copy',
-            CLIENT_SIGNED: 'Backend auto-escalates to company',
+            CLIENT_SIGNED: 'Move into company execution',
             AWAITING_COMPANY: 'Company representative signs and seals',
             FULLY_SIGNED: 'Send final PDF and secure 30-day link'
         }[contract.status] || 'Draft and review';
@@ -81,9 +81,9 @@
 
     function phaseCopy(status) {
         return {
-            DRAFT: 'Originator and reviewers can still change the body. Every save creates a version and tracked change.',
+            DRAFT: 'Originator and reviewers can still change the body. Each save creates a version and review record.',
             AWAITING_CLIENT: 'The body is frozen. Client signs digitally in the portal or returns a scanned hard copy.',
-            CLIENT_SIGNED: 'Client signature is recorded. Oscar state machine moves this toward company execution.',
+            CLIENT_SIGNED: 'Client signature is recorded. The contract is ready for company execution.',
             AWAITING_COMPANY: 'Only company signature, seal, stamp, and snapshot actions should run now.',
             FULLY_SIGNED: 'The contract is terminal. Distribution creates the client access token and audit record.'
         }[status] || 'Select a contract to inspect the lifecycle state.';
@@ -203,7 +203,7 @@
             state.selectedId = state.contracts[0]?.id || null;
         } catch (error) {
             state.contracts = [];
-            nodes.table.innerHTML = '<tr><td colspan="7">Contracts could not be loaded from the backend.</td></tr>';
+            nodes.table.innerHTML = '<tr><td colspan="7">Contracts could not be loaded. Check Apache and MySQL, then refresh.</td></tr>';
         } finally {
             state.loading = false;
             render();

@@ -72,7 +72,7 @@ ob_start();
     <div class="activity-grid">
         <article><strong>Version saved</strong><span>Contract #1 saved as a new document version.</span></article>
         <article><strong>Tracked changes ready</strong><span>Reviewer panel prepared for accept and reject actions.</span></article>
-        <article><strong>Distribution prepared</strong><span>Final PDF and token link UI ready for backend connection.</span></article>
+        <article><strong>Distribution prepared</strong><span>Final PDF and secure token link are ready for completed contracts.</span></article>
     </div>
 </section>
 <?php

@@ -9,7 +9,7 @@ $headerMeta = 'execution dashboard';
 $pageTitle = 'Execution Status';
 $pageHeading = 'Execution Status';
 $pageEyebrow = 'signing progress';
-$pageLead = 'Use this screen to jump into each frontend interface that maps to the Oscar backend flow.';
+$pageLead = 'Use this screen to move through the same lifecycle you tested in Apidog, using friendly frontend screens.';
 $pageActions = [
     '<a class="button ghost" href="' . $base . '/contracts/show/' . $contractId . '">Contract Details</a>',
     '<a class="button" href="' . $base . '/contracts/' . $contractId . '/editor#signing">Execution Controls</a>',
@@ -19,7 +19,7 @@ ob_start();
 ?>
 <section class="flow-board surface">
     <div class="section-head compact">
-        <div><p>test map</p><h2>Frontend interfaces by phase</h2></div>
+        <div><p>test map</p><h2>Interfaces by phase</h2></div>
         <span class="flow-note">ready for testing</span>
     </div>
     <div class="phase-grid">
@@ -81,13 +81,13 @@ ob_start();
         </ul>
     </div>
     <aside class="surface surface-pad">
-        <h2>Backend alignment</h2>
+        <h2>Connected actions</h2>
         <ul class="data-list">
-            <li>Submit uses Oscar `/api/contracts/{id}/submit`.</li>
-            <li>Signing uses Oscar `/api/contracts/{id}/sign`.</li>
-            <li>Hard copy uses Oscar `/api/contracts/{id}/upload-hard-copy`.</li>
-            <li>Seal uses Oscar `/api/contracts/{id}/seal`.</li>
-            <li>Distribution uses Oscar `/api/contracts/{id}/distribute`.</li>
+            <li>Submit sends the approved draft to the client.</li>
+            <li>Signing records client and company execution.</li>
+            <li>Hard-copy upload moves the physical signing path forward.</li>
+            <li>Seal applies the company approval stamp.</li>
+            <li>Distribution creates the final secure access link.</li>
         </ul>
     </aside>
 </section>

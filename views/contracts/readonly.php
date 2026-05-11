@@ -9,10 +9,10 @@ $headerMeta = 'execution workspace';
 $pageTitle = 'Read Only Contract';
 $pageHeading = $contract['title'] ?? 'Read-Only Execution View';
 $pageEyebrow = 'body lock enforced';
-$pageLead = 'The document body is frozen. Only designated execution blocks remain actionable.';
+$pageLead = 'Review the locked document and complete company execution, sealing, or final distribution.';
 $pageActions = [
-    '<a class="button warn" href="' . BASE_URL . '/contracts/sign/' . $contractId . '">Signature Block</a>',
-    '<a class="button success" href="' . BASE_URL . '/contracts/' . $contractId . '/editor#signing">Company Seal</a>',
+    '<a class="button ghost" href="' . BASE_URL . '/contracts/show/' . $contractId . '">Contract Details</a>',
+    '<a class="button success" href="' . BASE_URL . '/contracts/' . $contractId . '/editor#signing">Company Actions</a>',
 ];
 
 ob_start();
@@ -34,9 +34,9 @@ ob_start();
         <div class="surface surface-pad">
             <h2>Allowed actions</h2>
             <ul class="check-list">
-                <li>Company representative adds their digital signature when required.</li>
-                <li>Certified company seal is applied in the execution block.</li>
-                <li>Final distribution starts after FULLY SIGNED.</li>
+                <li>Company representative signs when the contract is awaiting company action.</li>
+                <li>Company seal and approval stamp are applied to the execution copy.</li>
+                <li>Final distribution starts only after the contract is fully signed.</li>
             </ul>
         </div>
         <div class="surface surface-pad">

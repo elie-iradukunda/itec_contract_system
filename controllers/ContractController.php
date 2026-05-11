@@ -264,16 +264,8 @@ class ContractController extends Controller
     
     public function editor($id)
     {
-        $db = \Core\Database::getInstance()->getConnection();
-        
-        $stmt = $db->prepare("
-            SELECT id, title, description, file_path, signing_state, created_by, created_at, updated_at
-            FROM contracts 
-            WHERE id = ?
-        ");
-        $stmt->execute([$id]);
-        $contract = $stmt->fetch();
-        
+        $contract = $this->contractService->getEditorData((int) $id);
+
         if (!$contract) {
             $this->view('errors/404', [
                 'title' => 'Contract Not Found',
@@ -281,47 +273,10 @@ class ContractController extends Controller
             ]);
             return;
         }
-        
-        $isLocked = $contract['signing_state'] !== 'DRAFT';
-        
-        $versionStmt = $db->prepare("
-            SELECT version_no, file_path, saved_at 
-            FROM doc_versions 
-            WHERE contract_id = ? 
-            ORDER BY version_no DESC 
-            LIMIT 1
-        ");
-        $versionStmt->execute([$id]);
-        $latestVersion = $versionStmt->fetch();
-        
-        $filePath = $contract['file_path'];
-        if ($latestVersion && file_exists($latestVersion['file_path'])) {
-            $filePath = $latestVersion['file_path'];
-        }
-        
-        $content = '';
-        if ($filePath && file_exists($filePath)) {
-            $content = file_get_contents($filePath);
-        } else {
-            $content = '<p>Start editing your contract here...</p>';
-        }
-        
-        $contractData = [
-            'id' => $id,
-            'title' => $contract['title'],
-            'description' => $contract['description'],
-            'signing_state' => $contract['signing_state'],
-            'file_path' => $filePath,
-            'content' => $content,
-            'created_by' => $contract['created_by'],
-            'created_at' => $contract['created_at'],
-            'updated_at' => $contract['updated_at'],
-            'latest_version' => $latestVersion['version_no'] ?? 0,
-            'last_saved_at' => $latestVersion['saved_at'] ?? $contract['updated_at']
-        ];
-        
+
         $this->view('contracts/editor', [
-            'contract' => $contractData,
+            'contract_id' => (int) $id,
+            'contract' => $contract,
             'title' => 'Contract Editor'
         ]);
     }
@@ -635,40 +590,9 @@ public function apiStore()
         
         $contractId = $this->db->lastInsertId();
         
-        // Generate document using DocumentGeneratorService
-        $docGenerator = new \Services\DocumentGeneratorService();
-        $filePath = $docGenerator->generateContract($contractId, [
-            'title' => $title,
-            'client_name' => $clientName,
-            'client_email' => $clientEmail,
-            'content' => $input['content'] ?? null,
-            'sections' => $input['sections'] ?? null,
-            'services' => $input['services'] ?? null,
-            'amount' => $input['amount'] ?? null,
-            'payment_terms' => $input['payment_terms'] ?? null,
-            'start_date' => $input['start_date'] ?? null,
-            'duration' => $input['duration'] ?? null,
-            'termination' => $input['termination'] ?? null,
-            'governing_law' => $input['governing_law'] ?? 'Rwanda',
-            'effective_date' => $input['effective_date'] ?? null
-        ]);
-        
-        // Update contract with file path
-        $updateSql = "UPDATE contracts SET file_path = :file_path WHERE id = :id";
-        $updateStmt = $this->db->prepare($updateSql);
-        $updateStmt->execute([
-            'file_path' => $filePath,
-            'id' => $contractId
-        ]);
-        
-        $versionSql = "INSERT INTO doc_versions (contract_id, version_no, saved_by, file_path, saved_at) 
-                       VALUES (:contract_id, 1, :saved_by, :file_path, NOW())";
-        $versionStmt = $this->db->prepare($versionSql);
-        $versionStmt->execute([
-            'contract_id' => $contractId,
-            'saved_by' => $input['created_by'] ?? 'system',
-            'file_path' => $filePath
-        ]);
+        $initialContent = $input['content'] ?? '<p></p>';
+        $saveResult = $this->contractService->saveEditorContent($contractId, $initialContent, $createdBy);
+        $filePath = $saveResult['file_path'];
         
         $this->json([
             'success' => true,
