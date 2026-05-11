@@ -4,8 +4,11 @@
 // TASK O1: DIGITAL SIGNATURE API
 // ============================================
 
+// Staff/Admin submits contract for signing
+$router->post('/api/contracts/{id}/submit', [\Controllers\ContractController::class, 'submitForSigning']);
 // Sign a document
 $router->post('/api/contracts/{id}/sign', [\Controllers\SignatureController::class, 'sign']);
+
 
 // Verify document integrity
 $router->get('/api/contracts/{id}/verify', [\Controllers\SignatureController::class, 'verify']);
