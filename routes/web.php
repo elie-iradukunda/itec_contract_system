@@ -26,9 +26,17 @@ $router->get('/contracts/view/{id}', [\Controllers\ContractController::class, 'v
 $router->get('/contracts/execution-status/{id}', [\Controllers\ContractController::class, 'executionStatus']);
 $router->get('/contracts/final-pdf/{id}', [\Controllers\ContractController::class, 'finalPDF']);
 $router->get('/contracts/audit-trail/{id}', [\Controllers\ContractController::class, 'auditTrailView']);
-    
+
 // Tokenized access (no login required)
 $router->get('/access/{token}', [\Controllers\ContractController::class, 'tokenAccess']);
+// Choice page (after token validation)
+$router->get('/sign/{id}', [\Controllers\ContractController::class, 'signPage']);
+
+// Digital signature page
+$router->get('/sign-digitally/{id}', [\Controllers\SignatureController::class, 'digitalSignPage']);
+
+// Upload hard copy page
+$router->get('/upload-contract/{id}', [\Controllers\UploadController::class, 'uploadPage']);
 // ============================================
 // TASK E1: IN-BROWSER EDITOR
 // ============================================
