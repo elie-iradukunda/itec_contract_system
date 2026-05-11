@@ -114,6 +114,35 @@ if (!defined('BASE_URL')) {
     overflow-y: auto;
 }
 
+
+        .navbar-brand {
+            font-weight: 600;
+            font-size: 1.25rem;
+        }
+        .container-main {
+            padding: 1.5rem;
+        }
+        .card {
+            border: none;
+            border-radius: 0.75rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        .card-header {
+            background-color: white;
+            border-bottom: 1px solid #e9ecef;
+            font-weight: 600;
+            padding: 1rem 1.25rem;
+        }
+        trix-editor {
+            min-height: <?= $height ?>;
+            max-height: <?= $height ?>;
+            overflow-y: auto;
+        }
+        .trix-content {
+            min-height: <?= $height ?>;
+        }
+      
+
     </style>
 </head>
 <body>
@@ -263,6 +292,7 @@ if (!defined('BASE_URL')) {
 
 <!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://unpkg.com/trix@2.0.8/dist/trix.umd.min.js"></script>
 
 <!-- Global Alpine Component for Notifications (optional) -->
 <script>
