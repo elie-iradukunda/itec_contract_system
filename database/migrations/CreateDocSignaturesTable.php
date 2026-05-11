@@ -14,7 +14,7 @@ class CreateDocSignaturesTable extends Migration
                 signer_role ENUM('client', 'company_rep') NOT NULL,
                 signature_blob TEXT NOT NULL,
                 public_key TEXT NOT NULL,
-                doc_hash VARCHAR(255) NOT NULL,
+                doc_hash VARCHAR(255) NULL,
                 signature_algorithm VARCHAR(50) DEFAULT 'SHA256',
                 signed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
