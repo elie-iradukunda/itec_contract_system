@@ -5,6 +5,13 @@ namespace Controllers;
 use Core\Controller;
 use Core\Database;
 use Services\OscarStateMachineService;
+use ZipArchive;
+use Exception;
+use PhpOffice\PhpWord\IOFactory;
+use PhpOffice\PhpWord\Settings;
+use PhpOffice\PhpWord\PhpWord;
+use setasign\Fpdi\Tcpdf\Fpdi;
+
 
 class ContractController extends Controller
 {
@@ -108,9 +115,10 @@ class ContractController extends Controller
         ]);
     }
 
-    public function tokenAccess($token)
+// Token validation endpoint (one-time use)
+public function tokenAccess($token)
 {
-    // echo "Token Access: {$token}"; // Debug log
+    // Validate token
     $stmt = $this->db->prepare("
         SELECT contract_id, recipient_email, expires_at, status 
         FROM doc_distributions 
@@ -120,35 +128,76 @@ class ContractController extends Controller
     $distribution = $stmt->fetch();
     
     if (!$distribution) {
-        $this->view('errors/404', ['message' => 'Invalid or expired link']);
+        $this->view('errors/404', ['message' => 'Invalid signing link']);
         return;
     }
-    // echo "Distribution found: Contract ID {$distribution['contract_id']}, Recipient {$distribution['recipient_email']}"; // Debug log
+    
     if (strtotime($distribution['expires_at']) < time()) {
-        
         $this->view('errors/419', ['message' => 'This signing link has expired (30 days limit)']);
         return;
     }
-    echo "Distribution status: {$distribution['status']}"; // Debug log
     
-    // Get contract details
-    $contractId = $distribution['contract_id'];
-    $contractStmt = $this->db->prepare("SELECT * FROM contracts WHERE id = ?");
-    $contractStmt->execute([$contractId]);
-    $contract = $contractStmt->fetch();
+    session_start();
+    $_SESSION['signing_contract_id'] = $distribution['contract_id'];
+    $_SESSION['signing_authorized'] = true;
     
     // Update distribution as opened
-    $updateStmt = $this->db->prepare("
-        UPDATE doc_distributions SET opened_at = NOW(), status = 'delivered' WHERE token = ?
-    ");
-    $updateStmt->execute([$token]);
+    if ($distribution['status'] === 'pending') {
+        $updateStmt = $this->db->prepare("
+            UPDATE doc_distributions SET opened_at = NOW(), status = 'delivered' WHERE token = ?
+        ");
+        $updateStmt->execute([$token]);
+    }
     
-    // Show signing page
+    // Redirect to clean signing page (no token in URL)
+    header('Location: /itec_contract_system/sign/' . $distribution['contract_id']);
+    exit;
+}
+
+public function signPage($contractId)
+{
+    session_start();
+    
+    // Check if user is authorized to sign this contract
+    if (!isset($_SESSION['signing_authorized']) || $_SESSION['signing_authorized'] !== true) {
+        header('Location: /itec_contract_system/');
+        exit;
+    }
+    
+    if (!isset($_SESSION['signing_contract_id']) || $_SESSION['signing_contract_id'] != $contractId) {
+        header('Location: /itec_contract_system/');
+        exit;
+    }
+    
+    // Get contract details
+    $stmt = $this->db->prepare("SELECT * FROM contracts WHERE id = ?");
+    $stmt->execute([$contractId]);
+    $contract = $stmt->fetch();
+    
+    if (!$contract) {
+        $this->view('errors/404', ['message' => 'Contract not found']);
+        return;
+    }
+    
+    // Check if already signed
+    $alreadySigned = in_array($contract['signing_state'], ['CLIENT_SIGNED', 'AWAITING_COMPANY', 'FULLY_SIGNED']);
+    
     $this->view('contracts/sign', [
         'contract' => $contract,
-        'token' => $token,
-        'title' => 'Sign Contract'
+        'title' => 'Sign Contract',
+        'already_signed' => $alreadySigned
     ]);
+}
+
+// After signing, clear session
+public function completeSigning($contractId)
+{
+    // After successful signature, clear session
+    session_start();
+    $_SESSION['signing_authorized'] = false;
+    $_SESSION['signing_contract_id'] = null;
+    
+    $this->json(['success' => true, 'message' => 'Contract signed successfully']);
 }
 
    public function submitForSigning($id)
@@ -477,6 +526,8 @@ public function apiStore()
             'effective_date' => $input['effective_date'] ?? null
         ]);
         
+        
+
         // Update contract with file path
         $updateSql = "UPDATE contracts SET file_path = :file_path WHERE id = :id";
         $updateStmt = $this->db->prepare($updateSql);
@@ -520,6 +571,132 @@ public function apiStore()
             'error' => 'Error: ' . $e->getMessage()
         ], 500);
     }
+}
+
+private function convertToPdf($inputPath)
+{
+    try {
+        $extension = strtolower(pathinfo($inputPath, PATHINFO_EXTENSION));
+
+        if ($extension === 'pdf') {
+            return $inputPath;
+        }
+
+        if (!class_exists('\ZipArchive')) {
+            throw new Exception('Zip extension is not enabled.');
+        }
+
+        if (!file_exists($inputPath)) {
+            throw new Exception('File not found.');
+        }
+
+        if (filesize($inputPath) <= 0) {
+            throw new Exception('File is empty.');
+        }
+
+        // Validate DOCX structure
+        $zip = new ZipArchive();
+        $openResult = $zip->open($inputPath);
+        if ($openResult !== true) {
+            throw new Exception('Invalid DOCX. Zip open failed with code: ' . $openResult);
+        }
+        if ($zip->locateName('_rels/.rels') === false) {
+            $zip->close();
+            throw new Exception('Invalid DOCX structure.');
+        }
+        $zip->close();
+
+        // Configure PDF Settings
+        \PhpOffice\PhpWord\Settings::setPdfRendererName(\PhpOffice\PhpWord\Settings::PDF_RENDERER_DOMPDF);
+        \PhpOffice\PhpWord\Settings::setPdfRendererPath(realpath(__DIR__ . '/../vendor/dompdf/dompdf'));
+
+        // Load the Word Document
+        $phpWord = \PhpOffice\PhpWord\IOFactory::load($inputPath);
+
+        $tempPdfPath = dirname($inputPath) . 
+                       DIRECTORY_SEPARATOR . 
+                       'tmp_' . 
+                       uniqid() . 
+                       '.pdf';
+
+        $writer = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'PDF');
+
+        /** 
+         * Logic Fix: Access the underlying Dompdf instance to enable 
+         * image loading and remote assets which are often required for logos.
+         */
+        if (method_exists($writer, 'getDompdf')) {
+            $dompdf = $writer->getDompdf();
+            $options = $dompdf->getOptions();
+            $options->set('isRemoteEnabled', true);
+            $options->set('isHtml5ParserEnabled', true);
+            $dompdf->setOptions($options);
+        }
+
+        $writer->save($tempPdfPath);
+
+        if (!file_exists($tempPdfPath)) {
+            throw new Exception('PDF conversion failed.');
+        }
+
+        return $tempPdfPath;
+
+    } catch (\Throwable $e) {
+        // Log error instead of just echoing in a private method context
+        error_log('Conversion Error: ' . $e->getMessage());
+        return false;
+    }
+}
+    
+
+    public function generatePrintPDF($id)
+{
+    // Get contract data
+    $stmt = $this->db->prepare("SELECT file_path, title FROM contracts WHERE id = ?");
+    $stmt->execute([$id]);
+    $contract = $stmt->fetch();
+    
+    if (!$contract) {
+        http_response_code(404);
+        echo "Contract not found";
+        return;
+    }
+    
+    $filePath = __DIR__.$contract['file_path'];
+    
+    if (!file_exists($filePath)) {
+        http_response_code(404);
+        echo "Contract file not found";
+        return;
+    }
+    
+    // Create temp output file
+    $tempDir = __DIR__ . '/../storage/temp/';
+    if (!is_dir($tempDir)) {
+        mkdir($tempDir, 0777, true);
+    }
+    
+    $result = $this->convertToPdf($filePath);
+    
+    if (!$result) {
+        http_response_code(500);
+        echo "Failed to generate PDF";
+        return;
+    }
+   
+    
+    // Set headers for PDF download
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: attachment; filename="contract_' . $id . '.pdf"');
+    header('Cache-Control: private, max-age=0, must-revalidate');
+    header('Pragma: public');
+    header('Content-Length: ' . filesize($result));
+    
+    // Output the PDF file
+    readfile($result);
+    
+    // Clean up temp file
+    unlink($result);
 }
 
 }
