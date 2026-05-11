@@ -80,7 +80,7 @@ class OscarSnapshotService
         return ($result['count'] ?? 0) + 1;
     }
     
-    private function convertToPdf($inputFile, $outputFile)
+    public function convertToPdf($inputFile, $outputFile)
     {
         $extension = strtolower(pathinfo($inputFile, PATHINFO_EXTENSION));
         
@@ -107,11 +107,11 @@ class OscarSnapshotService
         }
         
         // Fallback: Create simple PDF with file content
-        $this->createFallbackPdf($inputFile, $outputFile);
+        // $this->createFallbackPdf($inputFile, $outputFile);
         return true;
     }
     
-    private function createFallbackPdf($inputFile, $outputFile)
+    public function createFallbackPdf($inputFile, $outputFile)
     {
         $pdf = new \TCPDF();
         $pdf->AddPage();
