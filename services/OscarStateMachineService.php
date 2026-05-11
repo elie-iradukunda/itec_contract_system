@@ -40,8 +40,7 @@ class OscarStateMachineService
     
     private function getContractDetails()
     {
-        $query = "SELECT id, title, file_path, signing_state, client_signed_at, company_signed_at, finalized_at, created_by, created_at 
-                  FROM contracts WHERE id = ?";
+        $query = "SELECT * FROM contracts WHERE id = ?";
         $stmt = $this->db->prepare($query);
         $stmt->execute([$this->contractId]);
         return $stmt->fetch();
@@ -69,63 +68,67 @@ class OscarStateMachineService
     }
     
     private function updateState($newState, $additionalData = [])
-    {
-        $this->db->beginTransaction();
+{
+    $this->db->beginTransaction();
+    
+    try {
+        $updateFields = "signing_state = ?";
+        $params = [$newState];
         
-        try {
-            $updateFields = "signing_state = ?";
-            $params = [$newState];
-            
-            if (isset($additionalData['client_signed_at'])) {
-                $updateFields .= ", client_signed_at = ?";
-                $params[] = $additionalData['client_signed_at'];
-            }
-            
-            if (isset($additionalData['company_signed_at'])) {
-                $updateFields .= ", company_signed_at = ?";
-                $params[] = $additionalData['company_signed_at'];
-            }
-            
-            if (isset($additionalData['finalized_at'])) {
-                $updateFields .= ", finalized_at = ?";
-                $params[] = $additionalData['finalized_at'];
-            }
-            
-            $updateFields .= ", updated_at = NOW()";
-            $params[] = $this->contractId;
-            
-            $query = "UPDATE contracts SET {$updateFields} WHERE id = ?";
-            $stmt = $this->db->prepare($query);
-            $stmt->execute($params);
-            
-            $docHash = $this->getLatestDocumentHash();
-            
-            $auditQuery = "INSERT INTO doc_signature_audit 
-                           (contract_id, signer_id, event_type, doc_hash, ip_address, user_agent, timestamp) 
-                           VALUES (?, ?, ?, ?, ?, ?, NOW())";
-            
-            $auditStmt = $this->db->prepare($auditQuery);
-            $auditStmt->execute([
-                $this->contractId,
-                $additionalData['signer_id'] ?? 'system',
-                $this->getEventTypeForTransition($newState),
-                $docHash,
-                $_SERVER['REMOTE_ADDR'] ?? null,
-                $_SERVER['HTTP_USER_AGENT'] ?? null
-            ]);
-            
-            $this->db->commit();
-            $this->currentState = $newState;
-            
-            $this->sendEmailOnTransition($newState, $additionalData);
-            
-            return true;
-            
-        } catch (Exception $e) {
-            $this->db->rollBack();
-            throw $e;
+        if (isset($additionalData['client_signed_at'])) {
+            $updateFields .= ", client_signed_at = ?";
+            $params[] = $additionalData['client_signed_at'];
         }
+        
+        if (isset($additionalData['company_signed_at'])) {
+            $updateFields .= ", company_signed_at = ?";
+            $params[] = $additionalData['company_signed_at'];
+        }
+        
+        if (isset($additionalData['finalized_at'])) {
+            $updateFields .= ", finalized_at = ?";
+            $params[] = $additionalData['finalized_at'];
+        }
+        
+        $updateFields .= ", updated_at = NOW()";
+        $params[] = $this->contractId;
+        
+        $query = "UPDATE contracts SET {$updateFields} WHERE id = ?";
+        $stmt = $this->db->prepare($query);
+        $stmt->execute($params);
+        
+        $docHash = $this->getLatestDocumentHash();
+        
+        if ($docHash === null) {
+            $docHash = 'state_' . $newState . '_' . time();
+        }
+        
+        $auditQuery = "INSERT INTO doc_signature_audit 
+                       (contract_id, signer_id, event_type, doc_hash, ip_address, user_agent, timestamp) 
+                       VALUES (?, ?, ?, ?, ?, ?, NOW())";
+        
+        $auditStmt = $this->db->prepare($auditQuery);
+        $auditStmt->execute([
+            $this->contractId,
+            $additionalData['signer_id'] ?? 'system',
+            $this->getEventTypeForTransition($newState),
+            $docHash,
+            $_SERVER['REMOTE_ADDR'] ?? null,
+            $_SERVER['HTTP_USER_AGENT'] ?? null
+        ]);
+        
+        $this->db->commit();
+        $this->currentState = $newState;
+        
+        $this->sendEmailOnTransition($newState, $additionalData);
+        
+        return true;
+        
+    } catch (Exception $e) {
+        $this->db->rollBack();
+        throw $e;
     }
+}
     
     private function getEventTypeForTransition($newState)
     {
@@ -140,67 +143,114 @@ class OscarStateMachineService
     }
     
     private function sendEmailOnTransition($newState, $additionalData = [])
-    {
-        $contract = $this->getContractDetails();
-        
-        if (!$contract) {
-            return;
-        }
-        
-        $baseUrl = "http://" . ($_SERVER['HTTP_HOST'] ?? 'localhost') . "/itec_contract_system";
-        $companyEmail = getenv('SMTP_FROM_EMAIL') ?: 'company@itec.com';
-        $clientEmail = $this->getClientEmail();
-        
-        switch ($newState) {
-            case self::STATE_AWAITING_CLIENT:
-                $to = $clientEmail;
-                $subject = "Contract Ready for Signing - {$contract['title']}";
-                $body = "<html><body>
-                    <h2>Contract Ready for Signing</h2>
-                    <p>Contract <strong>{$contract['title']}</strong> is ready for your signature.</p>
-                    <p><a href='{$baseUrl}/contracts/sign/{$this->contractId}'>Sign Contract</a></p>
-                    </body></html>";
-                $this->mail->send($to, $subject, $body);
-                break;
-                
-            case self::STATE_CLIENT_SIGNED:
-                $to = $companyEmail;
-                $subject = "Contract Signed by Client - {$contract['title']}";
-                $body = "<html><body>
-                    <h2>Contract Signed</h2>
-                    <p>Contract <strong>{$contract['title']}</strong> has been signed by the client.</p>
-                    <p><a href='{$baseUrl}/contracts/review/{$this->contractId}'>Review and Sign</a></p>
-                    </body></html>";
-                $this->mail->send($to, $subject, $body);
-                break;
-                
-            case self::STATE_AWAITING_COMPANY:
-                $to = $companyEmail;
-                $subject = "Company Signature Required - {$contract['title']}";
-                $body = "<html><body>
-                    <h2>Company Signature Required</h2>
-                    <p>Contract <strong>{$contract['title']}</strong> requires company signature and seal.</p>
-                    <p><a href='{$baseUrl}/contracts/sign-company/{$this->contractId}'>Sign as Company</a></p>
-                    </body></html>";
-                $this->mail->send($to, $subject, $body);
-                break;
-                
-            case self::STATE_FULLY_SIGNED:
-                $to = $clientEmail;
-                $subject = "Contract Fully Executed - {$contract['title']}";
-                $body = "<html><body>
-                    <h2>Contract Fully Executed</h2>
-                    <p>Contract <strong>{$contract['title']}</strong> has been fully executed.</p>
-                    <p><a href='{$baseUrl}/contracts/view/{$this->contractId}'>View Final Contract</a></p>
-                    </body></html>";
-                $this->mail->send($to, $subject, $body);
-                
-                // Trigger stamp pipeline
-                $this->triggerStampPipeline($additionalData);
-                break;
-        }
+{
+    $contract = $this->getContractDetails();
+    
+    if (!$contract) {
+        return;
     }
     
+    $baseUrl = "http://" . ($_SERVER['HTTP_HOST'] ?? 'localhost') . "/itec_contract_system";
+    $companyEmail = getenv('SMTP_FROM_EMAIL') ?: 'company@itec.com';
+    $clientEmail = $additionalData['client_email'] ?? $this->getClientEmail();
+    
+    switch ($newState) {
+        case self::STATE_AWAITING_CLIENT:
+            // Generate distribution token for client
+            $distribution = $this->generateDistributionToken($this->contractId, $clientEmail);
+            
+            $to = $clientEmail;
+            $subject = "Contract Ready for Signing - {$contract['title']}";
+            $body = "<html><body>
+                <h2>Contract Ready for Signing</h2>
+                <p>Dear Client,</p>
+                <p>Contract <strong>{$contract['title']}</strong> is ready for your signature.</p>
+                
+                <p><strong>Option 1 - Digital Sign:</strong><br>
+                <a href='{$distribution['sign_url']}'>Click here to sign digitally</a></p>
+                
+                <p><strong>Option 2 - Hard Copy:</strong><br>
+                <a href='{$baseUrl}/contracts/{$this->contractId}/print-pdf'>Download Print-Ready PDF</a><br>
+                Print the contract, sign it physically, and upload the scanned copy using the link above.</p>
+                
+                <p>This signing link expires on: {$distribution['expires_at']}</p>
+                
+                <p>Thank you,<br>ITEC Team</p>
+                </body></html>";
+            
+            $this->mail->send($to, $subject, $body);
+            break;
+            
+        case self::STATE_CLIENT_SIGNED:
+            $to = $companyEmail;
+            $subject = "Contract Signed by Client - {$contract['title']}";
+            $body = "<html><body>
+                <h2>Contract Signed by Client</h2>
+                <p>Contract <strong>{$contract['title']}</strong> has been signed by the client.</p>
+                <p><a href='{$baseUrl}/contracts/review/{$this->contractId}'>Review and Add Company Signature</a></p>
+                </body></html>";
+            $this->mail->send($to, $subject, $body);
+            break;
+            
+        case self::STATE_AWAITING_COMPANY:
+            $to = $companyEmail;
+            $subject = "Company Signature Required - {$contract['title']}";
+            $body = "<html><body>
+                <h2>Company Signature Required</h2>
+                <p>Contract <strong>{$contract['title']}</strong> requires company signature and seal.</p>
+                <p><a href='{$baseUrl}/contracts/sign-company/{$this->contractId}'>Sign as Company</a></p>
+                </body></html>";
+            $this->mail->send($to, $subject, $body);
+            break;
+            
+        case self::STATE_FULLY_SIGNED:
+            $to = $clientEmail;
+            $subject = "Contract Fully Executed - {$contract['title']}";
+            $body = "<html><body>
+                <h2>Contract Fully Executed</h2>
+                <p>Dear Client,</p>
+                <p>Contract <strong>{$contract['title']}</strong> has been fully executed.</p>
+                <p><a href='{$baseUrl}/contracts/view/{$this->contractId}'>View Final Contract</a></p>
+                <p>The final PDF is attached to this email for your records.</p>
+                </body></html>";
+            $this->mail->send($to, $subject, $body);
+            
+            // Trigger stamp pipeline
+            $this->triggerStampPipeline($additionalData);
+            break;
+    }
+}
+
+
+    private function generateDistributionToken($contractId, $clientEmail)
+{
+    // Generate unique token
+    $expiryDays = 30;
+    $expiresAt = date('Y-m-d H:i:s', strtotime("+{$expiryDays} days"));
+    
+    // Create token: hash(contract_id + client_email + secret + expiry)
+    $secret = getenv('APP_SECRET') ?: 'itec_contract_secret_key';
+    $tokenData = $contractId . $clientEmail . $secret . $expiresAt;
+    $token = hash('sha256', $tokenData);
+    
+    // Store in doc_distributions table
+    $sql = "INSERT INTO doc_distributions (contract_id, recipient_email, token, expires_at, status, created_at) 
+            VALUES (:contract_id, :recipient_email, :token, :expires_at, 'pending', NOW())";
+    
+    $stmt = $this->db->prepare($sql);
+    $stmt->execute([
+        'contract_id' => $contractId,
+        'recipient_email' => $clientEmail,
+        'token' => $token,
+        'expires_at' => $expiresAt
+    ]);
+    
+    return [
+        'token' => $token,
+        'expires_at' => $expiresAt,
+        'sign_url' => "http://" . ($_SERVER['HTTP_HOST'] ?? 'localhost') . "/itec_contract_system/access/{$token}"
+    ];
+}
     private function triggerStampPipeline($additionalData = [])
     {
         try {
@@ -221,23 +271,29 @@ class OscarStateMachineService
     // Main State Transition Methods
     // ============================================
     
-    public function submitForSigning($signerId)
-    {
-        if ($this->currentState !== self::STATE_DRAFT) {
-            throw new Exception("Cannot submit contract from state: {$this->currentState}");
-        }
-        
-        $this->updateState(self::STATE_AWAITING_CLIENT, [
-            'signer_id' => $signerId
-        ]);
-        
-        return [
-            'success' => true,
-            'old_state' => self::STATE_DRAFT,
-            'new_state' => self::STATE_AWAITING_CLIENT,
-            'message' => 'Contract submitted for client signing'
-        ];
+   public function submitForSigning($signerId, $clientEmail = null)
+{
+    if ($this->currentState !== self::STATE_DRAFT) {
+        throw new Exception("Cannot submit contract from state: {$this->currentState}");
     }
+    
+    // Get client email if not provided
+    if (!$clientEmail) {
+        $clientEmail = $this->getClientEmail();
+    }
+    
+    $this->updateState(self::STATE_AWAITING_CLIENT, [
+        'signer_id' => $signerId,
+        'client_email' => $clientEmail
+    ]);
+    
+    return [
+        'success' => true,
+        'old_state' => self::STATE_DRAFT,
+        'new_state' => self::STATE_AWAITING_CLIENT,
+        'message' => 'Contract submitted for client signing'
+    ];
+}
     
     public function clientSign($signerId, $docHash = null)
     {
