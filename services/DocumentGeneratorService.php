@@ -15,7 +15,14 @@ class DocumentGeneratorService
     
     public function __construct()
     {
-        $this->storageDir = '/../storage/contracts/';
+        // Fix path - use realpath to resolve correctly
+        $this->storageDir = realpath(__DIR__ . '/../storage/contracts/');
+        
+        // If realpath fails (directory doesn't exist), construct manually
+        if (!$this->storageDir) {
+            $this->storageDir = __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'contracts' . DIRECTORY_SEPARATOR;
+        }
+        
         $this->ensureDirectoryExists();
         
         $this->companyInfo = [
@@ -38,8 +45,11 @@ class DocumentGeneratorService
     public function generateContract($contractId, $data)
     {
         $fileName = "contract_{$contractId}.docx";
-        $filePath = $this->storageDir . $fileName;
-
+        $filePath = $this->storageDir . DIRECTORY_SEPARATOR . $fileName;
+        
+        // Debug logging
+        error_log("DocumentGeneratorService: Saving to path: " . $filePath);
+        
         if (!class_exists('\ZipArchive')) {
             return $this->generateSimpleContract($filePath, $contractId, $data);
         }
@@ -65,7 +75,7 @@ class DocumentGeneratorService
         
         // --- Header Section ---
         $header = $section->addHeader();
-        $logoPath = __DIR__ . '/../public/assets/logo.png'; 
+        $logoPath = __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'logo.png'; 
         if (file_exists($logoPath)) {
             $header->addImage($logoPath, ['width' => 160, 'alignment' => Jc::CENTER]);
         }
@@ -93,9 +103,14 @@ class DocumentGeneratorService
         // --- Footer Section ---
         $this->addFooter($section);
         
-        // Save the document
-        $objWriter = IOFactory::createWriter($phpWord, 'Word2007');
-        $objWriter->save($filePath);
+        try {
+            $objWriter = IOFactory::createWriter($phpWord, 'Word2007');
+            $objWriter->save($filePath);
+            error_log("DocumentGeneratorService: File saved successfully at: " . $filePath);
+        } catch (\Throwable $error) {
+            error_log("DocumentGeneratorService: Error saving file: " . $error->getMessage());
+            return $this->generateSimpleContract($filePath, $contractId, $data);
+        }
         
         // Validate generated file using ZipArchive
         $zip = new ZipArchive();
@@ -168,12 +183,16 @@ class DocumentGeneratorService
             foreach ($paragraphs as $p) {
                 $cleanLine = $this->sanitizeForXml(trim($p));
                 if ($cleanLine !== '') {
-                    $section->addText($cleanLine, ['size' => 10.5]);
-                    $section->addTextBreak(1);
+                    // Detect numbered items (1., 2., etc.) and style them
+                    if (preg_match('/^\d+\./', $cleanLine)) {
+                        $section->addText($cleanLine, ['size' => 10.5, 'bold' => true]);
+                    } else {
+                        $section->addText($cleanLine, ['size' => 10.5]);
+                    }
+                    $section->addTextBreak(0.5);
                 }
             }
         } else {
-            // Default content if none provided
             $section->addTitle('Agreement Details', 2);
             $section->addText('This agreement is made between the parties as described above.', ['size' => 10.5]);
             $section->addTextBreak(1);
@@ -242,22 +261,19 @@ class DocumentGeneratorService
     
     public function updateContractContent($contractId, $content)
     {
-        $filePath = $this->storageDir . "contract_{$contractId}.docx";
+        $filePath = $this->storageDir . DIRECTORY_SEPARATOR . "contract_{$contractId}.docx";
         
         if (!file_exists($filePath)) {
             return false;
         }
         
-        // Load existing document
         $phpWord = IOFactory::load($filePath);
         
-        // Get the first section
         $sections = $phpWord->getSections();
         if (empty($sections)) {
             return false;
         }
         
-        // For simplicity, regenerate the document
         $data = [
             'title' => 'Updated Contract',
             'client_name' => 'Client Name',
@@ -266,5 +282,55 @@ class DocumentGeneratorService
         ];
         
         return $this->generateContract($contractId, $data);
+    }
+    
+    // Helper methods for simple contract generation
+    private function writeZip($filePath, $files) {
+        $zip = new ZipArchive();
+        if ($zip->open($filePath, ZipArchive::CREATE) !== true) {
+            return;
+        }
+        foreach ($files as $name => $content) {
+            $zip->addFromString($name, $content);
+        }
+        $zip->close();
+    }
+    
+    private function contentTypesXml() {
+        return '<?xml version="1.0" encoding="UTF-8"?>
+        <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+            <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+            <Default Extension="xml" ContentType="application/xml"/>
+            <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+        </Types>';
+    }
+    
+    private function rootRelsXml() {
+        return '<?xml version="1.0" encoding="UTF-8"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+            <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+        </Relationships>';
+    }
+    
+    private function documentRelsXml() {
+        return '<?xml version="1.0" encoding="UTF-8"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        </Relationships>';
+    }
+    
+    private function documentXml($lines) {
+        $body = '';
+        foreach ($lines as $line) {
+            if (empty($line)) {
+                $body .= '<w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr></w:p>';
+            } else {
+                $body .= '<w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr><w:r><w:t xml:space="preserve">' . htmlspecialchars($line) . '</w:t></w:r></w:p>';
+            }
+        }
+        
+        return '<?xml version="1.0" encoding="UTF-8"?>
+        <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:body>' . $body . '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body>
+        </w:document>';
     }
 }
