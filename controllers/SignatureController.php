@@ -23,10 +23,16 @@ class SignatureController extends Controller
     // POST /api/contracts/{id}/sign
     public function sign($contractId)
 {
-    // Get role from POST body
+    // Get role from JSON or form body. The public signing page submits FormData
+    // so the drawn signature image can travel beside the existing fields.
     $input = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($input)) {
+        $input = [];
+    }
     $role = $input['role'] ?? $_POST['role'] ?? null;
     $signerId = $input['signer_id'] ?? $_POST['signer_id'] ?? null;
+    $typedName = trim((string) ($input['typed_signature'] ?? $_POST['typed_signature'] ?? ''));
+    $visualSignature = $input['signature_data'] ?? $_POST['signature_data'] ?? '';
     
     // Validate role
     if (!$role || !in_array($role, ['client', 'company_rep'])) {
@@ -75,6 +81,25 @@ class SignatureController extends Controller
         $this->json(['success' => false, 'error' => $result['error']], 500);
         return;
     }
+
+    $visualSignaturePath = null;
+    if ($role === 'client') {
+        $this->rememberClientSigningDetails((int) $contractId, $typedName, $signerId);
+
+        if (is_string($visualSignature) && trim($visualSignature) !== '') {
+            try {
+                $visualSignaturePath = $this->signatureService->saveVisualSignature(
+                    (int) $contractId,
+                    $signerId,
+                    $visualSignature,
+                    $result['signature_id']
+                );
+            } catch (\Throwable $error) {
+                $this->json(['success' => false, 'error' => $error->getMessage()], 500);
+                return;
+            }
+        }
+    }
     
     // Update contract state
     $stateMachine = new OscarStateMachineService($contractId);
@@ -93,6 +118,7 @@ class SignatureController extends Controller
     $this->json([
         'success' => true,
         'signature_id' => $result['signature_id'],
+        'signature_file_path' => $visualSignaturePath,
         'doc_hash' => $result['doc_hash'],
         'new_state' => $newState,
         'message' => $message
@@ -357,9 +383,6 @@ class SignatureController extends Controller
     private function rememberClientSigningDetails($contractId, $typedName, $email)
     {
         $name = trim((string) $typedName);
-        if ($name === '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $name = ucwords(str_replace(['.', '_', '-'], ' ', strstr($email, '@', true) ?: $email));
-        }
 
         $stmt = $this->db->prepare("
             UPDATE contracts

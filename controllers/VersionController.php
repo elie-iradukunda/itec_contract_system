@@ -50,6 +50,25 @@ class VersionController extends Controller
         $this->versionModel->streamDownload((int) $id, (int) $version);
     }
 
+    public function preview($id, $version)
+    {
+        // Return a read-only, generator-style preview for the saved DOCX version.
+        try {
+            $preview = $this->versionModel->preview((int) $id, (int) $version);
+            $preview['document']['logo_url'] = BASE_URL . '/public/assets/logo.png';
+            $preview['document']['tagline'] = 'BE SMART, CHOOSE SMART';
+            $preview['document']['company_name'] = 'ITEC Solutions';
+
+            $this->json([
+                'success' => true,
+                'version' => $preview['version'],
+                'document' => $preview['document'],
+            ]);
+        } catch (\Throwable $error) {
+            $this->json(['success' => false, 'message' => $error->getMessage()], 500);
+        }
+    }
+
     public function compare($id, $v1, $v2)
     {
         // Lightweight comparison endpoint for the editor side panel.

@@ -267,10 +267,8 @@ public function signPage($contractId)
         exit;
     }
     
-    // Get contract details
-    $stmt = $this->db->prepare("SELECT * FROM contracts WHERE id = ?");
-    $stmt->execute([$contractId]);
-    $contract = $stmt->fetch();
+    // Get the locked editor content as the client-facing read-only contract.
+    $contract = $this->contractService->getEditorData((int) $contractId);
     
     if (!$contract) {
         $this->view('errors/404', ['message' => 'Contract not found']);
@@ -282,6 +280,8 @@ public function signPage($contractId)
     
     $this->view('contracts/sign', [
         'contract' => $contract,
+        'contract_id' => (int) $contractId,
+        'signatures' => $this->getSignaturesForContract((int) $contractId),
         'signing_email' => $_SESSION['signing_email'] ?? $contract['client_email'] ?? '',
         'signed_mode' => $_GET['signed'] ?? null,
         'title' => 'Sign Contract',
@@ -684,41 +684,60 @@ public function apiStore()
     // Get JSON input
     $input = json_decode(file_get_contents('php://input'), true);
     
-    // Validate required fields
-    $clientName = $input['client_name'] ?? $_POST['client_name'] ?? null;
-    $clientEmail = $input['client_email'] ?? $_POST['client_email'] ?? null;
-    $title = $input['title'] ?? $_POST['title'] ?? null;
+    // Draft creation only needs the contract body. The real client is attached
+    // later when the contract is submitted for signing.
+    $clientName = trim((string) ($input['client_name'] ?? $_POST['client_name'] ?? ''));
+    $clientEmail = trim((string) ($input['client_email'] ?? $_POST['client_email'] ?? ''));
+    $title = trim((string) ($input['title'] ?? $_POST['title'] ?? ''));
+    $hasClientInfo = $clientName !== '' && filter_var($clientEmail, FILTER_VALIDATE_EMAIL);
     
-    if (!$clientName || !$clientEmail || !$title) {
+    if ($title === '') {
         $this->json([
             'success' => false, 
-            'error' => 'Missing required fields: client_name, client_email, title'
+            'error' => 'Missing required field: title'
         ], 400);
         return;
     }
     
     try {
+        $clientId = $hasClientInfo
+            ? $this->ensureClientForContract($clientName, $clientEmail)
+            : $this->ensureDraftClientId();
+
         // Insert into database first to get contract ID
-        $sql = "INSERT INTO contracts (title, description, signing_state, created_by) 
-                VALUES (:title, :description, 'DRAFT', :created_by)";
+        $sql = "INSERT INTO contracts (client_id, client_name, client_email, title, description, signing_state, created_by) 
+                VALUES (:client_id, :client_name, :client_email, :title, :description, 'DRAFT', :created_by)";
         
         $stmt = $this->db->prepare($sql);
         $stmt->execute([
+            'client_id' => $clientId,
+            'client_name' => $hasClientInfo ? $clientName : '',
+            'client_email' => $hasClientInfo ? $clientEmail : '',
             'title' => $title,
             'description' => $input['description'] ?? null,
             'created_by' => 1
         ]);
         
         $contractId = $this->db->lastInsertId();
+        $draftContent = (string) ($input['content'] ?? '');
+        $contractFolder = dirname(__DIR__) . '/storage/contracts/' . (int) $contractId;
+        if (!is_dir($contractFolder)) {
+            mkdir($contractFolder, 0777, true);
+        }
         
         // Generate document using DocumentGeneratorService
         $docGenerator = new \Services\DocumentGeneratorService();
         $filePath = $docGenerator->generateContract($contractId, [
             'title' => $title,
-            'client_name' => $clientName,
-            'client_email' => $clientEmail,
-            'content' => $input['content'] ?? null,
+            'client_name' => $hasClientInfo ? $clientName : '',
+            'client_email' => $hasClientInfo ? $clientEmail : '',
+            'content' => $draftContent ?: null,
         ]);
+
+        if (trim($draftContent) !== '') {
+            file_put_contents($contractFolder . '/contract.html', $draftContent);
+            file_put_contents($contractFolder . '/contract.txt', $this->draftHtmlToPlainText($draftContent));
+        }
         
         // Update contract with file path
         $updateSql = "UPDATE contracts SET file_path = :file_path WHERE id = :id";
@@ -728,6 +747,18 @@ public function apiStore()
             'id' => $contractId
         ]);
         
+        $initialVersionPath = $contractFolder . '/v1.docx';
+        $initialVersionRelativePath = 'storage/contracts/' . (int) $contractId . '/v1.docx';
+        if (!copy($filePath, $initialVersionPath)) {
+            throw new \Exception('The initial contract version could not be saved');
+        }
+        if (is_file($contractFolder . '/contract.html')) {
+            copy($contractFolder . '/contract.html', $contractFolder . '/v1.html');
+        }
+        if (is_file($contractFolder . '/contract.txt')) {
+            copy($contractFolder . '/contract.txt', $contractFolder . '/v1.txt');
+        }
+
         // Create initial version in doc_versions
         $versionSql = "INSERT INTO doc_versions (contract_id, version_no, saved_by, file_path, saved_at) 
                        VALUES (:contract_id, 1, :saved_by, :file_path, NOW())";
@@ -735,7 +766,7 @@ public function apiStore()
         $versionStmt->execute([
             'contract_id' => $contractId,
             'saved_by' => $input['created_by'] ?? 'system',
-            'file_path' => $filePath
+            'file_path' => $initialVersionRelativePath
         ]);
         
         $this->json([
@@ -745,26 +776,37 @@ public function apiStore()
             'contract' => [
                 'id' => $contractId,
                 'title' => $title,
-                'client_name' => $clientName,
-                'client_email' => $clientEmail,
+                'client_name' => $hasClientInfo ? $clientName : null,
+                'client_email' => $hasClientInfo ? $clientEmail : null,
                 'signing_state' => 'DRAFT',
                 'file_path' => $filePath,
                 'created_at' => date('Y-m-d H:i:s')
             ]
         ]);
         
-    } catch (PDOException $e) {
+    } catch (\PDOException $e) {
         $this->json([
             'success' => false, 
             'error' => 'Database error: ' . $e->getMessage()
         ], 500);
-    } catch (Exception $e) {
+    } catch (\Exception $e) {
         $this->json([
             'success' => false, 
             'error' => 'Error: ' . $e->getMessage()
         ], 500);
     }
 }
+
+    private function draftHtmlToPlainText($html)
+    {
+        $html = preg_replace('/<\/(td|th)>/i', "\t", (string) $html);
+        $html = preg_replace('/<(\/p|br|br\/|br \\/|\/div|\/li|\/h[1-6]|\/blockquote|\/tr)>/i', "\n", $html);
+        $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = preg_replace("/[ \t]+\n/", "\n", $text);
+        $text = preg_replace("/\n{3,}/", "\n\n", $text);
+
+        return trim($text);
+    }
 
     private function parseRecipientEmails($value)
     {
@@ -787,14 +829,18 @@ public function apiStore()
 
     private function rememberPrimaryRecipient($contractId, $email)
     {
+        $clientName = $this->displayNameFromEmail($email);
+        $clientId = $this->ensureClientForContract($clientName, $email);
+
         $stmt = $this->db->prepare("
             UPDATE contracts
-            SET client_email = COALESCE(NULLIF(client_email, ''), ?),
+            SET client_id = ?,
+                client_email = COALESCE(NULLIF(client_email, ''), ?),
                 client_name = COALESCE(NULLIF(client_name, ''), ?),
                 updated_at = NOW()
             WHERE id = ?
         ");
-        $stmt->execute([$email, $this->displayNameFromEmail($email), $contractId]);
+        $stmt->execute([$clientId, $email, $clientName, $contractId]);
     }
 
     private function createSigningDistribution($contractId, $email)
@@ -865,6 +911,26 @@ public function apiStore()
             VALUES (?, ?, ?, 'active')
         ");
         $stmt->execute([$clientName, $clientEmail, $clientName]);
+
+        return (int) $this->db->lastInsertId();
+    }
+
+    private function ensureDraftClientId()
+    {
+        $draftEmail = 'draft-client@itec.local';
+        $stmt = $this->db->prepare("SELECT id FROM clients WHERE email = ? LIMIT 1");
+        $stmt->execute([$draftEmail]);
+        $existing = $stmt->fetchColumn();
+
+        if ($existing) {
+            return (int) $existing;
+        }
+
+        $stmt = $this->db->prepare("
+            INSERT INTO clients (name, email, company_name, status)
+            VALUES ('Client pending', ?, 'Client pending', 'draft')
+        ");
+        $stmt->execute([$draftEmail]);
 
         return (int) $this->db->lastInsertId();
     }

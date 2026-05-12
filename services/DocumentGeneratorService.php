@@ -2,6 +2,8 @@
 
 namespace Services;
 
+use Dompdf\Dompdf;
+use Dompdf\Options;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\SimpleType\Jc;
@@ -33,6 +35,36 @@ class DocumentGeneratorService
             'tagline'  => 'BE SMART, CHOOSE SMART',
             'services' => 'Web hosting & design, software development, web & mobile Application development, Graphic design, IT Consultancy, IT supplying & support, office support'
         ];
+    }
+
+    public function generateContractPdf($contractId, array $data, array $signatures = [])
+    {
+        $contractId = (int) $contractId;
+        $contractDir = rtrim($this->storageDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $contractId;
+        if (!is_dir($contractDir)) {
+            mkdir($contractDir, 0777, true);
+        }
+
+        $signatureBlock = null;
+        $bodyHtml = $this->contractPdfBodyHtml($data['content'] ?? '', $signatureBlock);
+        $html = $this->contractPdfHtml($contractId, $data, $bodyHtml, $signatures, $signatureBlock);
+
+        $options = new Options();
+        $options->set('isRemoteEnabled', false);
+        $options->set('isHtml5ParserEnabled', true);
+        $options->setChroot(dirname(__DIR__));
+
+        $dompdf = new Dompdf($options);
+        $dompdf->loadHtml($html);
+        $dompdf->setPaper('A4', 'portrait');
+        $dompdf->render();
+
+        $pdfPath = $contractDir . DIRECTORY_SEPARATOR . 'contract_review_' . uniqid('', true) . '.pdf';
+        if (file_put_contents($pdfPath, $dompdf->output()) === false) {
+            throw new \Exception('Generated contract PDF could not be saved.');
+        }
+
+        return $pdfPath;
     }
     
     private function ensureDirectoryExists()
@@ -97,8 +129,8 @@ class DocumentGeneratorService
         $this->addMetadataTable($section, $contractId, $data);
         $section->addTextBreak(1);
         
-        $this->addSanitizedContent($section, $data);
-        $this->addSignatureSection($section, $data['client_name']);
+        $signatureBlock = $this->addSanitizedContent($section, $data);
+        $this->addSignatureSection($section, $data['client_name'], $signatureBlock);
         
         // --- Footer Section ---
         $this->addFooter($section);
@@ -150,6 +182,291 @@ class DocumentGeneratorService
 
         return $filePath;
     }
+
+    private function contractPdfHtml($contractId, array $data, $bodyHtml, array $signatures, $signatureBlock = null)
+    {
+        $title = $this->cleanText($data['title'] ?? 'Contract');
+        $documentType = $this->cleanText($data['document_type'] ?? $data['type'] ?? 'Contract');
+        $clientName = $this->cleanText($data['client_name'] ?? '') ?: 'Client Representative';
+        $clientEmail = $this->cleanText($data['client_email'] ?? '') ?: 'Not provided';
+        $date = date('F d, Y');
+        $logo = $this->imageDataUri($this->projectPath('public/assets/logo-print.jpg'))
+            ?: $this->imageDataUri($this->projectPath('public/assets/logo.png'));
+
+        $logoHtml = $logo
+            ? '<img class="logo" src="' . $this->e($logo) . '" alt="ITEC Solutions">'
+            : '<div class="logo-text">ITEC Solutions</div>';
+
+        return '<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        @page { margin: 34px 42px 56px; }
+        body { color: #1f2937; font-family: DejaVu Sans, Arial, sans-serif; font-size: 12px; line-height: 1.55; }
+        .header { text-align: center; padding-bottom: 12px; border-bottom: 3px solid #111827; margin-bottom: 22px; }
+        .logo { width: 138px; height: auto; margin-bottom: 5px; }
+        .logo-text { color: #80181a; font-size: 21px; font-weight: bold; margin-bottom: 5px; }
+        .tagline { color: #42546a; font-size: 10px; font-weight: bold; text-transform: uppercase; }
+        h1 { color: #80181a; margin: 0 0 16px; font-size: 20px; text-align: center; text-transform: uppercase; }
+        h2 { color: #80181a; margin: 22px 0 10px; font-size: 14px; text-transform: uppercase; }
+        h3 { color: #183655; margin: 15px 0 7px; font-size: 12.5px; }
+        p { margin: 0 0 8px; }
+        .meta { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
+        .meta td { border: 1px solid #d8dee8; padding: 8px 10px; vertical-align: top; }
+        .meta td:first-child { width: 25%; color: #183655; background: #f3f5f8; font-weight: bold; }
+        .body-copy ul, .body-copy ol { margin: 6px 0 10px 22px; padding: 0; }
+        .body-copy li { margin: 0 0 5px; }
+        .body-copy .note { color: #657086; font-style: italic; }
+        .date-table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; }
+        .date-table td { border: 1px solid #d8dee8; padding: 8px 10px; }
+        .date-table td:first-child { width: 30%; background: #f8fafc; font-weight: bold; }
+        .signature-table { width: 100%; border-collapse: collapse; margin-top: 12px; page-break-inside: avoid; }
+        .signature-table td { width: 50%; padding: 0 18px 0 0; vertical-align: bottom; }
+        .signature-box { height: 78px; border-bottom: 2px solid #111827; text-align: center; vertical-align: middle; }
+        .signature-box img { max-width: 210px; max-height: 62px; margin-top: 8px; }
+        .signature-placeholder { color: #8a94a6; padding-top: 34px; font-size: 10.5px; }
+        .signature-label { color: #183655; margin-top: 7px; font-weight: bold; }
+        .signature-small { color: #657086; font-size: 10.5px; }
+        .footer { position: fixed; left: 0; right: 0; bottom: -34px; color: #657086; text-align: center; font-size: 9px; border-top: 1px solid #9ca3af; padding-top: 7px; }
+    </style>
+</head>
+<body>
+    <div class="header">' . $logoHtml . '<div class="tagline">' . $this->e($this->companyInfo['tagline']) . '</div></div>
+    <h1>' . $this->e($title) . '</h1>
+    <table class="meta">
+        <tr><td>Contract Ref</td><td>#' . (int) $contractId . '</td></tr>
+        <tr><td>Document Type</td><td>' . $this->e($documentType) . '</td></tr>
+        <tr><td>Client</td><td>' . $this->e($clientName) . '</td></tr>
+        <tr><td>Email</td><td>' . $this->e($clientEmail) . '</td></tr>
+        <tr><td>Date</td><td>' . $this->e($date) . '</td></tr>
+    </table>
+    <h2>Agreement Details</h2>
+    <div class="body-copy">' . $bodyHtml . '</div>
+    ' . $this->contractPdfSignatureHtml($data, $signatures, $signatureBlock) . '
+    <div class="footer">' . $this->e($this->companyInfo['address']) . ' | TIN: ' . $this->e($this->companyInfo['tin']) . ' | Tel: ' . $this->e($this->companyInfo['phone']) . '<br>' . $this->e($this->companyInfo['services']) . '</div>
+</body>
+</html>';
+    }
+
+    private function contractPdfBodyHtml($content, &$signatureBlock = null)
+    {
+        $content = (string) $content;
+        if ($this->hasDraftSections($content)) {
+            $sections = $this->parseDraftSections($content);
+            $html = '';
+
+            foreach ($sections as $draftSection) {
+                $type = $draftSection['type'] ?? 'paragraph';
+                if ($type === 'signature') {
+                    $signatureBlock = $draftSection;
+                    continue;
+                }
+
+                if ($type === 'heading') {
+                    $html .= '<h3>' . $this->e($draftSection['title'] ?? 'Contract section') . '</h3>';
+                    if (!empty($draftSection['note'])) {
+                        $html .= '<p class="note">' . $this->e($draftSection['note']) . '</p>';
+                    }
+                    continue;
+                }
+
+                if ($type === 'checkbox') {
+                    $mark = !empty($draftSection['checked']) ? '[x]' : '[ ]';
+                    $html .= '<h3>' . $this->e($draftSection['title'] ?? 'Acceptance') . '</h3>';
+                    $html .= '<p><strong>' . $this->e($mark . ' ' . ($draftSection['label'] ?? 'Acceptance checkbox')) . '</strong></p>';
+                    continue;
+                }
+
+                if ($type === 'date') {
+                    $html .= '<h3>' . $this->e($draftSection['title'] ?? 'Date') . '</h3>';
+                    $html .= '<table class="date-table"><tr><td>' . $this->e($draftSection['label'] ?? 'Date') . '</td><td>' . $this->e($draftSection['value'] ?? '________________') . '</td></tr></table>';
+                    continue;
+                }
+
+                $title = $this->cleanText($draftSection['title'] ?? '');
+                if ($title !== '') {
+                    $html .= '<h3>' . $this->e($title) . '</h3>';
+                }
+
+                if ($type === 'list') {
+                    $html .= $this->contractPdfListHtml($draftSection);
+                    continue;
+                }
+
+                $html .= $this->contractPdfBlocksHtml($draftSection['blocks'] ?? []);
+            }
+
+            return trim($html) !== '' ? $html : '<p>Contract details to be completed.</p>';
+        }
+
+        $html = $this->sanitizePdfHtml($content);
+        return trim(strip_tags($html)) !== '' ? $html : '<p>Contract details to be completed.</p>';
+    }
+
+    private function contractPdfBlocksHtml(array $blocks)
+    {
+        $html = '';
+        foreach ($blocks as $block) {
+            $text = $this->cleanText($block['text'] ?? '');
+            if ($text === '') {
+                continue;
+            }
+
+            if (($block['type'] ?? '') === 'heading') {
+                $html .= '<h3>' . $this->e($text) . '</h3>';
+            } elseif (($block['type'] ?? '') === 'list') {
+                $html .= '<p style="margin-left: 16px;">' . $this->e($text) . '</p>';
+            } else {
+                $html .= '<p>' . $this->e($text) . '</p>';
+            }
+        }
+
+        return $html;
+    }
+
+    private function contractPdfListHtml(array $draftSection)
+    {
+        $style = $draftSection['list_style'] ?? 'bullet';
+        $items = $draftSection['items'] ?? [];
+        $tag = $style === 'numbered' ? 'ol' : 'ul';
+        $html = '<' . $tag . '>';
+
+        foreach ($items as $item) {
+            $text = $this->cleanText($item['text'] ?? '');
+            if ($text === '') {
+                continue;
+            }
+
+            if ($style === 'checklist') {
+                $text = (!empty($item['checked']) ? '[x] ' : '[ ] ') . $text;
+            }
+
+            $html .= '<li>' . $this->e($text) . '</li>';
+        }
+
+        return $html . '</' . $tag . '>';
+    }
+
+    private function contractPdfSignatureHtml(array $data, array $signatures, $signatureBlock = null)
+    {
+        $clientSignature = $this->signatureForRole($signatures, 'client');
+        $companySignature = $this->signatureForRole($signatures, 'company_rep');
+        $clientImage = $this->signatureImageDataUri($clientSignature);
+        $companyImage = $this->signatureImageDataUri($companySignature);
+
+        $leftSigner = $this->cleanText($signatureBlock['left_signer'] ?? '') ?: $this->cleanText($data['client_name'] ?? '') ?: 'Client Representative';
+        $rightSigner = $this->cleanText($signatureBlock['right_signer'] ?? '') ?: 'Authorized Signatory';
+        $clientSignedAt = $this->signatureDate($clientSignature['signed_at'] ?? null);
+        $companySignedAt = $this->signatureDate($companySignature['signed_at'] ?? null);
+
+        $clientBox = $clientImage
+            ? '<img src="' . $this->e($clientImage) . '" alt="Client signature">'
+            : '<div class="signature-placeholder">Client signature space</div>';
+        $companyBox = $companyImage
+            ? '<img src="' . $this->e($companyImage) . '" alt="Company signature">'
+            : '<div class="signature-placeholder">Reserved for ITEC signatory</div>';
+
+        return '<h2>Signatures</h2>
+<table class="signature-table">
+    <tr>
+        <td>
+            <div class="signature-box">' . $clientBox . '</div>
+            <div class="signature-label">Client Signature</div>
+            <div class="signature-small">' . $this->e($leftSigner) . '</div>
+            <div class="signature-small">Date: ' . $this->e($clientSignedAt) . '</div>
+        </td>
+        <td>
+            <div class="signature-box">' . $companyBox . '</div>
+            <div class="signature-label">ITEC Solutions</div>
+            <div class="signature-small">' . $this->e($rightSigner) . '</div>
+            <div class="signature-small">Date: ' . $this->e($companySignedAt) . '</div>
+        </td>
+    </tr>
+</table>';
+    }
+
+    private function sanitizePdfHtml($html)
+    {
+        $allowed = '<p><br><strong><b><em><i><u><s><span><div><ul><ol><li><h1><h2><h3><h4><h5><h6><blockquote><table><thead><tbody><tfoot><tr><td><th><hr>';
+        $html = strip_tags((string) $html, $allowed);
+        $html = preg_replace('/\s+on[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $html);
+        $html = preg_replace('/javascript\s*:/i', '', $html);
+        $html = preg_replace('/\s+(class|id|style|data-[a-z0-9_-]+)\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $html);
+
+        return $html;
+    }
+
+    private function signatureForRole(array $signatures, $role)
+    {
+        $match = null;
+        foreach ($signatures as $signature) {
+            if (($signature['signer_role'] ?? '') === $role) {
+                $match = $signature;
+            }
+        }
+
+        return $match ?: [];
+    }
+
+    private function signatureImageDataUri(array $signature)
+    {
+        $path = $signature['signature_file_path'] ?? '';
+        if ($path === '') {
+            return '';
+        }
+
+        return $this->imageDataUri($this->resolveProjectPath($path));
+    }
+
+    private function imageDataUri($path)
+    {
+        $path = (string) $path;
+        if ($path === '' || !is_file($path)) {
+            return '';
+        }
+
+        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        $mime = match ($extension) {
+            'jpg', 'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            default => '',
+        };
+
+        if ($mime === '') {
+            return '';
+        }
+
+        $contents = file_get_contents($path);
+        return $contents === false ? '' : 'data:' . $mime . ';base64,' . base64_encode($contents);
+    }
+
+    private function signatureDate($value)
+    {
+        return !empty($value) ? date('F d, Y', strtotime($value)) : '________________';
+    }
+
+    private function resolveProjectPath($path)
+    {
+        $path = str_replace('\\', '/', (string) $path);
+        if ($path === '') {
+            return '';
+        }
+
+        return preg_match('/^[A-Za-z]:\//', $path) || str_starts_with($path, '/')
+            ? $path
+            : dirname(__DIR__) . '/' . ltrim($path, '/');
+    }
+
+    private function projectPath($path)
+    {
+        return dirname(__DIR__) . '/' . ltrim(str_replace('\\', '/', (string) $path), '/');
+    }
+
+    private function e($value)
+    {
+        return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+    }
     
     private function addMetadataTable($section, $contractId, $data)
     {
@@ -173,31 +490,405 @@ class DocumentGeneratorService
     
     private function addSanitizedContent($section, $data)
     {
+        $section->addTitle('Agreement Details', 2);
+
         if (!empty($data['content'])) {
-            $section->addTitle('Agreement Details', 2);
-            
-            $plainText = strip_tags(str_replace(['</p>', '<br>', '<br/>'], "\n", $data['content']));
-            $plainText = html_entity_decode($plainText, ENT_QUOTES, 'UTF-8');
-            
-            $paragraphs = explode("\n", $plainText);
-            foreach ($paragraphs as $p) {
-                $cleanLine = $this->sanitizeForXml(trim($p));
-                if ($cleanLine !== '') {
-                    // Detect numbered items (1., 2., etc.) and style them
-                    if (preg_match('/^\d+\./', $cleanLine)) {
-                        $section->addText($cleanLine, ['size' => 10.5, 'bold' => true]);
-                    } else {
-                        $section->addText($cleanLine, ['size' => 10.5]);
-                    }
-                    $section->addTextBreak(0.5);
+            if ($this->hasDraftSections($data['content'])) {
+                return $this->addStructuredDraftContent($section, $data['content']);
+            }
+
+            $paragraphs = $this->extractContractParagraphs($data['content']);
+
+            foreach ($paragraphs as $paragraph) {
+                $cleanLine = $this->sanitizeForXml($paragraph['text']);
+                if ($cleanLine === '') {
+                    continue;
                 }
+
+                if ($paragraph['is_heading']) {
+                    $section->addText(
+                        $cleanLine,
+                        ['size' => 11, 'bold' => true, 'color' => $this->primaryColor],
+                        ['spaceBefore' => 180, 'spaceAfter' => 90]
+                    );
+                    continue;
+                }
+
+                if ($paragraph['is_list']) {
+                    $section->addText(
+                        $cleanLine,
+                        ['size' => 10.5],
+                        ['indentation' => ['left' => 360, 'hanging' => 180], 'spaceAfter' => 90]
+                    );
+                    continue;
+                }
+
+                $section->addText($cleanLine, ['size' => 10.5], ['spaceAfter' => 110, 'lineHeight' => 1.18]);
             }
         } else {
-            $section->addTitle('Agreement Details', 2);
-            $section->addText('This agreement is made between the parties as described above.', ['size' => 10.5]);
-            $section->addTextBreak(1);
-            $section->addText('The parties agree to the terms and conditions outlined in this document.', ['size' => 10.5]);
+            $section->addText('This agreement is made between the parties as described above.', ['size' => 10.5], ['spaceAfter' => 110]);
+            $section->addText('The parties agree to the terms and conditions outlined in this document.', ['size' => 10.5], ['spaceAfter' => 110]);
         }
+
+        return null;
+    }
+
+    private function hasDraftSections($html)
+    {
+        return stripos((string) $html, 'data-draft-section') !== false;
+    }
+
+    private function addStructuredDraftContent($section, $html)
+    {
+        $signatureBlock = null;
+        $sections = $this->parseDraftSections($html);
+
+        foreach ($sections as $draftSection) {
+            $type = $draftSection['type'] ?? 'paragraph';
+
+            if ($type === 'signature') {
+                $signatureBlock = $draftSection;
+                continue;
+            }
+
+            if ($type === 'heading') {
+                $this->addDraftTitle($section, $draftSection['title'] ?? 'Contract section', 12);
+                $this->addDraftNote($section, $draftSection['note'] ?? '');
+                continue;
+            }
+
+            if ($type === 'checkbox') {
+                $this->addDraftTitle($section, $draftSection['title'] ?? 'Acceptance', 11);
+                $mark = !empty($draftSection['checked']) ? '[x]' : '[ ]';
+                $section->addText(
+                    $mark . ' ' . $this->cleanText($draftSection['label'] ?? 'Acceptance checkbox'),
+                    ['size' => 10.5, 'bold' => true],
+                    ['spaceAfter' => 110, 'indentation' => ['left' => 240]]
+                );
+                continue;
+            }
+
+            if ($type === 'date') {
+                $this->addDraftTitle($section, $draftSection['title'] ?? 'Date', 11);
+                $table = $section->addTable(['borderSize' => 4, 'borderColor' => 'D9D9D9', 'cellMargin' => 80]);
+                $table->addRow();
+                $table->addCell(2500, ['bgColor' => 'F7F7F7'])->addText($this->cleanText($draftSection['label'] ?? 'Date'), ['size' => 10, 'bold' => true]);
+                $table->addCell(6500)->addText($this->cleanText($draftSection['value'] ?? '________________'), ['size' => 10.5]);
+                $section->addTextBreak(1);
+                continue;
+            }
+
+            $this->addDraftTitle($section, $draftSection['title'] ?? 'Contract section', 11);
+
+            if ($type === 'list') {
+                $this->addDraftList($section, $draftSection);
+                continue;
+            }
+
+            foreach (($draftSection['blocks'] ?? []) as $block) {
+                $this->addDraftContentBlock($section, $block);
+            }
+        }
+
+        return $signatureBlock;
+    }
+
+    private function addDraftTitle($section, $title, $size = 11)
+    {
+        $text = $this->cleanText($title);
+        if ($text === '') {
+            return;
+        }
+
+        $section->addText(
+            $text,
+            ['size' => $size, 'bold' => true, 'color' => $this->primaryColor],
+            ['spaceBefore' => 180, 'spaceAfter' => 90]
+        );
+    }
+
+    private function addDraftNote($section, $note)
+    {
+        $text = $this->cleanText($note);
+        if ($text === '') {
+            return;
+        }
+
+        $section->addText($text, ['size' => 10, 'italic' => true, 'color' => '666666'], ['spaceAfter' => 100]);
+    }
+
+    private function addDraftContentBlock($section, array $block)
+    {
+        $text = $this->cleanText($block['text'] ?? '');
+        if ($text === '') {
+            return;
+        }
+
+        if (($block['type'] ?? '') === 'heading') {
+            $this->addDraftTitle($section, $text, 10.5);
+            return;
+        }
+
+        if (($block['type'] ?? '') === 'list') {
+            $section->addText(
+                $text,
+                ['size' => 10.5],
+                ['indentation' => ['left' => 360, 'hanging' => 180], 'spaceAfter' => 90]
+            );
+            return;
+        }
+
+        $section->addText($text, ['size' => 10.5], ['spaceAfter' => 110, 'lineHeight' => 1.18]);
+    }
+
+    private function addDraftList($section, array $draftSection)
+    {
+        $style = $draftSection['list_style'] ?? 'bullet';
+        $items = $draftSection['items'] ?? [];
+
+        foreach ($items as $index => $item) {
+            $text = $this->cleanText($item['text'] ?? '');
+            if ($text === '') {
+                continue;
+            }
+
+            if ($style === 'numbered') {
+                $line = ($index + 1) . '. ' . $text;
+            } elseif ($style === 'checklist') {
+                $line = (!empty($item['checked']) ? '[x] ' : '[ ] ') . $text;
+            } else {
+                $line = '- ' . $text;
+            }
+
+            $section->addText(
+                $line,
+                ['size' => 10.5],
+                ['indentation' => ['left' => 420, 'hanging' => 180], 'spaceAfter' => 80]
+            );
+        }
+    }
+
+    private function parseDraftSections($html)
+    {
+        if (!class_exists('\DOMDocument')) {
+            return $this->parseDraftSectionsFallback($html);
+        }
+
+        $previous = libxml_use_internal_errors(true);
+        $dom = new \DOMDocument('1.0', 'UTF-8');
+        $dom->loadHTML('<?xml encoding="UTF-8"><div id="draft-root">' . (string) $html . '</div>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        $xpath = new \DOMXPath($dom);
+        $nodes = $xpath->query('//*[@data-draft-section]');
+        $sections = [];
+
+        foreach ($nodes as $node) {
+            if (!$node instanceof \DOMElement) {
+                continue;
+            }
+
+            $type = $node->getAttribute('data-draft-section') ?: 'paragraph';
+            $title = $this->directParagraphText($xpath, $node) ?: $this->cleanText($node->getAttribute('data-label'));
+            $section = [
+                'type' => $type,
+                'title' => $title,
+                'blocks' => [],
+            ];
+
+            if ($type === 'heading') {
+                $section['note'] = $this->nodeText($xpath->query('.//*[@data-section-note]', $node)->item(0));
+            } elseif (in_array($type, ['paragraph', 'text'], true)) {
+                $contentNode = $xpath->query('.//*[@data-section-content]', $node)->item(0);
+                $section['blocks'] = $this->contentBlocksFromNode($xpath, $contentNode ?: $node, $title);
+            } elseif ($type === 'list') {
+                $section['list_style'] = $node->getAttribute('data-list-style') ?: 'bullet';
+                $section['items'] = $this->listItemsFromNode($xpath, $node);
+            } elseif ($type === 'checkbox') {
+                $section['label'] = $this->cleanText($node->getAttribute('data-label')) ?: $this->stripCheckboxMarker($this->lastParagraphText($xpath, $node));
+                $section['checked'] = $node->getAttribute('data-checked') === '1';
+            } elseif ($type === 'date') {
+                $section['title'] = preg_replace('/:\s*.*$/', '', $section['title'] ?? '');
+                $section['label'] = $this->cleanText($node->getAttribute('data-label')) ?: 'Date';
+                $section['value'] = $this->cleanText($node->getAttribute('data-value')) ?: '________________';
+            } elseif ($type === 'signature') {
+                $section['left_signer'] = $this->cleanText($node->getAttribute('data-left-signer')) ?: 'Client Signature';
+                $section['right_signer'] = $this->cleanText($node->getAttribute('data-right-signer')) ?: 'ITEC Solutions';
+                $section['note'] = $this->nodeText($xpath->query('.//*[@data-section-note]', $node)->item(0));
+            }
+
+            $sections[] = $section;
+        }
+
+        return $sections;
+    }
+
+    private function parseDraftSectionsFallback($html)
+    {
+        return [[
+            'type' => 'paragraph',
+            'title' => 'Contract details',
+            'blocks' => array_map(function ($paragraph) {
+                return ['type' => 'paragraph', 'text' => $paragraph['text']];
+            }, $this->extractContractParagraphs($html)),
+        ]];
+    }
+
+    private function directParagraphText(\DOMXPath $xpath, \DOMElement $node)
+    {
+        return $this->nodeText($xpath->query('./p[1]', $node)->item(0));
+    }
+
+    private function lastParagraphText(\DOMXPath $xpath, \DOMElement $node)
+    {
+        $items = $xpath->query('./p', $node);
+        return $items->length ? $this->nodeText($items->item($items->length - 1)) : '';
+    }
+
+    private function contentBlocksFromNode(\DOMXPath $xpath, \DOMNode $node, $titleToSkip = '')
+    {
+        $blocks = [];
+        $elements = $xpath->query('.//*[self::p or self::h1 or self::h2 or self::h3 or self::h4 or self::h5 or self::h6 or self::li]', $node);
+
+        foreach ($elements as $element) {
+            $text = $this->nodeText($element);
+            if ($text === '' || $text === $this->cleanText($titleToSkip)) {
+                continue;
+            }
+
+            $tag = strtolower($element->nodeName);
+            $type = preg_match('/^h[1-6]$/', $tag) ? 'heading' : ($tag === 'li' ? 'list' : 'paragraph');
+            if ($this->isContractListLine($text)) {
+                $type = 'list';
+            }
+
+            $blocks[] = ['type' => $type, 'text' => $text];
+        }
+
+        if (!$blocks) {
+            $text = $this->nodeText($node);
+            if ($text !== '' && $text !== $this->cleanText($titleToSkip)) {
+                $blocks[] = ['type' => 'paragraph', 'text' => $text];
+            }
+        }
+
+        return $blocks;
+    }
+
+    private function listItemsFromNode(\DOMXPath $xpath, \DOMElement $node)
+    {
+        $items = [];
+        $nodes = $xpath->query('.//*[@data-list-item]', $node);
+
+        foreach ($nodes as $itemNode) {
+            if (!$itemNode instanceof \DOMElement) {
+                continue;
+            }
+
+            $text = $this->cleanText($itemNode->getAttribute('data-text')) ?: $this->stripListMarker($this->nodeText($itemNode));
+            $items[] = [
+                'text' => $text,
+                'checked' => $itemNode->getAttribute('data-checked') === '1',
+            ];
+        }
+
+        return $items;
+    }
+
+    private function nodeText($node)
+    {
+        if (!$node) {
+            return '';
+        }
+
+        return $this->cleanText($node->textContent ?? '');
+    }
+
+    private function extractContractParagraphs($html)
+    {
+        $html = (string) $html;
+        $paragraphs = [];
+
+        if (preg_match_all('/<p\b[^>]*>(.*?)<\/p>/is', $html, $matches)) {
+            foreach ($matches[1] as $rawParagraph) {
+                $text = $this->htmlToCleanText($rawParagraph);
+                if ($text === '') {
+                    continue;
+                }
+
+                $paragraphs[] = [
+                    'text' => $text,
+                    'is_heading' => $this->isContractBodyHeading($text, $rawParagraph),
+                    'is_list' => $this->isContractListLine($text),
+                ];
+            }
+        }
+
+        if (!$paragraphs) {
+            $plainText = strip_tags(str_replace(['</p>', '<br>', '<br/>', '<br />'], "\n", $html));
+            $plainText = html_entity_decode($plainText, ENT_QUOTES, 'UTF-8');
+
+            foreach (preg_split('/\R+/', $plainText) as $line) {
+                $text = trim($line);
+                if ($text === '') {
+                    continue;
+                }
+
+                $paragraphs[] = [
+                    'text' => $text,
+                    'is_heading' => $this->isContractBodyHeading($text, ''),
+                    'is_list' => $this->isContractListLine($text),
+                ];
+            }
+        }
+
+        return $paragraphs;
+    }
+
+    private function htmlToCleanText($html)
+    {
+        $html = preg_replace('/<br\s*\/?>/i', "\n", (string) $html);
+        $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = preg_replace('/[ \t]+/', ' ', $text);
+        $text = preg_replace('/\s*\R\s*/', ' ', $text);
+
+        return trim($text);
+    }
+
+    private function cleanText($value)
+    {
+        $text = html_entity_decode(strip_tags((string) $value), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = preg_replace('/[ \t\x{00A0}]+/u', ' ', $text);
+        $text = preg_replace('/\s*\R\s*/', ' ', $text);
+
+        return trim($text);
+    }
+
+    private function stripListMarker($value)
+    {
+        return trim(preg_replace('/^(No\.\s*\d+:|\d+\.|[-*]|\[[x ]\])\s*/i', '', $this->cleanText($value)));
+    }
+
+    private function stripCheckboxMarker($value)
+    {
+        return trim(preg_replace('/^\[[x ]\]\s*/i', '', $this->cleanText($value)));
+    }
+
+    private function isContractBodyHeading($text, $rawHtml)
+    {
+        $text = trim((string) $text);
+        if ($text === '') {
+            return false;
+        }
+
+        $hasStrongTitle = preg_match('/<strong\b[^>]*>.*?<\/strong>/is', (string) $rawHtml);
+        return (bool) ($hasStrongTitle && preg_match('/^\d+(\.\d+)*\.?\s+\S/', $text));
+    }
+
+    private function isContractListLine($text)
+    {
+        return (bool) preg_match('/^(-|No\.\s*\d+:|\[[x ]\])\s+/i', trim((string) $text));
     }
 
     private function sanitizeForXml($text) 
@@ -207,10 +898,21 @@ class DocumentGeneratorService
         return htmlspecialchars($text, ENT_XML1 | ENT_QUOTES, 'UTF-8');
     }
     
-    private function addSignatureSection($section, $clientName)
+    private function addSignatureSection($section, $clientName, $signatureBlock = null)
     {
         $section->addTextBreak(2);
         $section->addTitle('Signatures', 2);
+
+        if (!empty($signatureBlock['note'])) {
+            $section->addText(
+                $this->cleanText($signatureBlock['note']),
+                ['size' => 9.5, 'italic' => true, 'color' => '666666'],
+                ['spaceAfter' => 120]
+            );
+        }
+
+        $leftSigner = $this->cleanText($signatureBlock['left_signer'] ?? '') ?: $this->cleanText($clientName) ?: 'Client Representative';
+        $rightSigner = $this->cleanText($signatureBlock['right_signer'] ?? '') ?: 'Authorized Signatory';
         
         $table = $section->addTable(['borderSize' => 0]);
         $table->addRow(400);
@@ -224,9 +926,9 @@ class DocumentGeneratorService
         $table->addCell(4000)->addText("ITEC Solutions", ['size' => 9, 'bold' => true]);
         
         $table->addRow();
-        $table->addCell(4000)->addText($this->sanitizeForXml($clientName), ['size' => 9]);
+        $table->addCell(4000)->addText($this->sanitizeForXml($leftSigner), ['size' => 9]);
         $table->addCell(1000);
-        $table->addCell(4000)->addText("Authorized Signatory", ['size' => 9]);
+        $table->addCell(4000)->addText($this->sanitizeForXml($rightSigner), ['size' => 9]);
         
         $table->addRow();
         $table->addCell(4000)->addText("Date: _______________", ['size' => 9]);
