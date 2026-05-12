@@ -3,3 +3,8 @@ RewriteBase /itec_contract_system/
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^(.*)$ index.php?url=$1 [QSA,L]
+
+<FilesMatch "\.pdf$">
+    Header always set Content-Disposition "inline"
+    Header always set Content-Type "application/pdf"
+</FilesMatch>
