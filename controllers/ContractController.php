@@ -714,7 +714,7 @@ public function apiStore()
     } catch (\Throwable $e) {
         $this->json([
             'success' => false, 
-            'error' => 'Error: ' . $e->getMessage()
+            'error' => 'Error: ' . $e->getMessage().' file: '.$e->getFile().' line: '.$e->getLine()
         ], 500);
     }
 }
