@@ -156,11 +156,7 @@ class OscarStateMachineService
         return;
     }
     
-<<<<<<< HEAD
     $baseUrl = "http://" . ($_SERVER['HTTP_HOST'] ?? 'localhost') . "/".BASE_URL;
-=======
-    $baseUrl = defined('BASE_URL') ? BASE_URL : '/itec_contract_system';
->>>>>>> 958ad639205705ea1da6d0db67e6337b89b4f856
     $companyEmail = getenv('SMTP_FROM_EMAIL') ?: 'company@itec.com';
     $clientEmail = $additionalData['client_email'] ?? $this->getClientEmail();
     
@@ -314,11 +310,7 @@ private function sendContractFullyExecutedEmail($contract, $clientEmail, $baseUr
     return [
         'token' => $token,
         'expires_at' => $expiresAt,
-<<<<<<< HEAD
         'sign_url' => "{$protocol}://{$host}/itec_contract_system/access/{$token}"
-=======
-        'sign_url' => (defined('BASE_URL') ? BASE_URL : '/itec_contract_system') . "/access/{$token}"
->>>>>>> 958ad639205705ea1da6d0db67e6337b89b4f856
     ];
 }
 
