@@ -3,6 +3,8 @@
 namespace Controllers;
 
 use Core\Controller;
+use Models\Contract;
+use Services\DocumentGeneratorService;
 use Services\OscarSignatureService;
 use Services\OscarStateMachineService;
 
@@ -86,6 +88,14 @@ class SignatureController extends Controller
         $result = $this->signatureService->signDocument($contractId, $signerId, $role, $filePath);
         
         if ($result['success']) {
+            if ($role === 'client') {
+                $this->rememberClientSigningDetails(
+                    (int) $contractId,
+                    trim((string) ($_POST['typed_signature'] ?? $input['typed_signature'] ?? '')),
+                    trim((string) $signerId)
+                );
+            }
+
             // If a visual signature (base64 image) was sent, save it linked to the signature record
             $visualPath = null;
             $signatureData = $_POST['signature_data'] ?? null;
@@ -166,7 +176,10 @@ class SignatureController extends Controller
     public function applySeal($contractId)
     {
         $input = json_decode(file_get_contents('php://input'), true) ?: [];
-        $approver = $input['signer_id'] ?? $_POST['signer_id'] ?? $_POST['approver_name'] ?? 'company@itec.com';
+        $approver = trim((string) ($input['signer_id'] ?? $input['approver_name'] ?? $_POST['signer_id'] ?? $_POST['approver_name'] ?? 'company@itec.com'));
+        if ($approver === '') {
+            $approver = 'company@itec.com';
+        }
 
         try {
             $stmt = $this->db->prepare("SELECT signing_state FROM contracts WHERE id = ?");
@@ -237,7 +250,7 @@ class SignatureController extends Controller
         }
 
         $contractId = (int) ($contractId ?: 1);
-        $stmt = $this->db->prepare("SELECT id, title, signing_state FROM contracts WHERE id = ?");
+        $stmt = $this->db->prepare("SELECT id, title, client_name, client_email, signing_state FROM contracts WHERE id = ?");
         $stmt->execute([$contractId]);
         $contract = $stmt->fetch();
 
@@ -274,6 +287,83 @@ class SignatureController extends Controller
         $this->signPage($contractId);
     }
 
+    public function previewSignaturePdf($contractId)
+    {
+        if (session_status() === PHP_SESSION_NONE) {
+            @session_start();
+        }
+
+        $contractId = (int) $contractId;
+        if (
+            !isset($_SESSION['signing_authorized']) ||
+            $_SESSION['signing_authorized'] !== true ||
+            (int) ($_SESSION['signing_contract_id'] ?? 0) !== $contractId
+        ) {
+            http_response_code(403);
+            echo 'This signing session is not authorized. Please use the secure email link.';
+            return;
+        }
+
+        $contract = (new Contract())->getEditorData($contractId);
+        if (!$contract) {
+            http_response_code(404);
+            echo 'Contract not found';
+            return;
+        }
+
+        $typedName = trim((string) ($_POST['typed_signature'] ?? ''));
+        $signerEmail = trim((string) ($_POST['signer_id'] ?? ''));
+
+        if ($typedName !== '') {
+            $contract['client_name'] = $typedName;
+        }
+
+        if ($signerEmail !== '') {
+            $contract['client_email'] = $signerEmail;
+        }
+
+        $tempSignaturePath = $this->savePreviewSignatureImage($_POST['signature_data'] ?? '');
+        $signatures = $this->getSignaturesForPreview($contractId);
+
+        if ($tempSignaturePath) {
+            $signatures = array_values(array_filter($signatures, function ($signature) {
+                return ($signature['signer_role'] ?? '') !== 'client';
+            }));
+            $signatures[] = [
+                'id' => 0,
+                'signer_id' => $signerEmail ?: ($contract['client_email'] ?? 'client'),
+                'signer_role' => 'client',
+                'signature_file_path' => $tempSignaturePath,
+                'signed_at' => date('Y-m-d H:i:s'),
+            ];
+        }
+
+        $pdfPath = null;
+        try {
+            $pdfPath = (new DocumentGeneratorService())->generateContractPdf($contractId, $contract, $signatures);
+
+            if (!$pdfPath || !is_file($pdfPath)) {
+                http_response_code(500);
+                echo 'Failed to generate preview PDF';
+                return;
+            }
+
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: inline; filename="contract_' . $contractId . '_review.pdf"');
+            header('Cache-Control: private, max-age=0, must-revalidate');
+            header('Pragma: public');
+            header('Content-Length: ' . filesize($pdfPath));
+            readfile($pdfPath);
+        } finally {
+            if ($pdfPath && is_file($pdfPath)) {
+                @unlink($pdfPath);
+            }
+            if ($tempSignaturePath && is_file($tempSignaturePath)) {
+                @unlink($tempSignaturePath);
+            }
+        }
+    }
+
     public function sealPage()
     {
         $this->view('contracts/readonly', ['contract_id' => 1, 'title' => 'Company Seal']);
@@ -294,6 +384,63 @@ class SignatureController extends Controller
         return preg_match('/^[A-Za-z]:\//', $path) || str_starts_with($path, '/')
             ? $path
             : dirname(__DIR__) . '/' . ltrim($path, '/');
+    }
+
+    private function rememberClientSigningDetails($contractId, $typedName, $email)
+    {
+        $name = trim((string) $typedName);
+        if ($name === '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $name = ucwords(str_replace(['.', '_', '-'], ' ', strstr($email, '@', true) ?: $email));
+        }
+
+        $stmt = $this->db->prepare("
+            UPDATE contracts
+            SET client_name = COALESCE(NULLIF(?, ''), client_name),
+                client_email = COALESCE(NULLIF(?, ''), client_email),
+                updated_at = NOW()
+            WHERE id = ?
+        ");
+        $stmt->execute([$name, $email, (int) $contractId]);
+    }
+
+    private function getSignaturesForPreview($contractId)
+    {
+        $stmt = $this->db->prepare("
+            SELECT id, signer_id, signer_role, signature_file_path, signed_at
+            FROM doc_signatures
+            WHERE contract_id = ?
+            ORDER BY signed_at ASC
+        ");
+        $stmt->execute([(int) $contractId]);
+
+        return $stmt->fetchAll() ?: [];
+    }
+
+    private function savePreviewSignatureImage($dataUrl)
+    {
+        if (!is_string($dataUrl) || $dataUrl === '') {
+            return null;
+        }
+
+        if (!preg_match('/^data:image\/(jpe?g|png);base64,/i', $dataUrl, $matches)) {
+            return null;
+        }
+
+        [, $encoded] = explode('base64,', $dataUrl, 2);
+        $decoded = base64_decode($encoded, true);
+        if ($decoded === false) {
+            return null;
+        }
+
+        $tempDir = dirname(__DIR__) . '/storage/temp/';
+        if (!is_dir($tempDir)) {
+            mkdir($tempDir, 0777, true);
+        }
+
+        $extension = strtolower($matches[1]) === 'png' ? 'png' : 'jpg';
+        $path = $tempDir . 'preview_signature_' . uniqid() . '.' . $extension;
+
+        return file_put_contents($path, $decoded) === false ? null : $path;
     }
 
     // POST /api/contracts/{id}/submit

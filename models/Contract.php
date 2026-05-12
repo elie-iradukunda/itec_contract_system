@@ -18,9 +18,9 @@ class Contract
     public function findAll($filters = [])
     {
         $sql = "
-            SELECT c.*, COALESCE(cl.company_name, c.client_name) AS company_name,
-                   COALESCE(cl.name, c.client_name) AS client_name,
-                   COALESCE(cl.email, c.client_email) AS client_email,
+            SELECT c.*, COALESCE(c.client_name, cl.company_name, cl.name) AS company_name,
+                   COALESCE(c.client_name, cl.name) AS client_name,
+                   COALESCE(c.client_email, cl.email) AS client_email,
                    u.name AS created_by_name
             FROM contracts c
             LEFT JOIN clients cl ON cl.id = c.client_id
@@ -50,9 +50,9 @@ class Contract
     public function find($id)
     {
         $stmt = $this->db->prepare("
-            SELECT c.*, COALESCE(cl.company_name, c.client_name) AS company_name,
-                   COALESCE(cl.name, c.client_name) AS client_name,
-                   COALESCE(cl.email, c.client_email) AS client_email,
+            SELECT c.*, COALESCE(c.client_name, cl.company_name, cl.name) AS company_name,
+                   COALESCE(c.client_name, cl.name) AS client_name,
+                   COALESCE(c.client_email, cl.email) AS client_email,
                    u.name AS created_by_name
             FROM contracts c
             LEFT JOIN clients cl ON cl.id = c.client_id

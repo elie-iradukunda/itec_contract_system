@@ -145,8 +145,8 @@ class OscarSignatureService
      */
     public function saveVisualSignature($contractId, $signerId, $dataUrl, $signatureId = null)
     {
-        // Expect data URL like 'data:image/png;base64,....'
-        if (strpos($dataUrl, 'base64,') === false) {
+        // Expect data URL like 'data:image/png;base64,....' or 'data:image/jpeg;base64,....'
+        if (!preg_match('/^data:image\/(png|jpe?g);base64,/i', $dataUrl, $matches)) {
             throw new \Exception('Invalid signature data format');
         }
 
@@ -158,12 +158,22 @@ class OscarSignatureService
 
         $sanitizedSigner = preg_replace('/[^a-zA-Z0-9]/', '_', $signerId);
         $suffix = $signatureId ? "_{$signatureId}" : '_' . time();
-        $filename = "sig_{$contractId}_{$sanitizedSigner}{$suffix}.png";
+        $extension = strtolower($matches[1]) === 'png' ? 'png' : 'jpg';
+        $filename = "sig_{$contractId}_{$sanitizedSigner}{$suffix}.{$extension}";
         $filepath = $this->signaturesDir . $filename;
 
         $written = file_put_contents($filepath, $decoded);
         if ($written === false) {
             throw new \Exception('Failed to write visual signature file');
+        }
+
+        if ($signatureId) {
+            $stmt = $this->db->prepare("
+                UPDATE doc_signatures
+                SET signature_file_path = ?
+                WHERE id = ? AND contract_id = ?
+            ");
+            $stmt->execute([$filepath, (int) $signatureId, (int) $contractId]);
         }
 
         return $filepath;
