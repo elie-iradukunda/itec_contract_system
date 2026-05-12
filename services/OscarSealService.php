@@ -284,6 +284,7 @@ class OscarSealService
 
             $pdf->setPrintHeader(false);
             $pdf->setPrintFooter(false);
+            $pdf->SetAutoPageBreak(false, 0);
 
             $pageCount = $pdf->setSourceFile($inputPdf);
 
@@ -301,7 +302,7 @@ class OscarSealService
                     [$size['width'], $size['height']]
                 );
 
-                $pdf->useTemplate($templateId);
+                $pdf->useTemplate($templateId, 0, 0, $size['width'], $size['height'], true);
 
                 $this->addSealToPage($pdf);
 
