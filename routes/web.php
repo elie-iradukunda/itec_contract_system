@@ -49,6 +49,9 @@ $router->post('/contracts/{id}/save', [\Controllers\ContractController::class, '
 $router->get('/contracts/{id}/content', [\Controllers\ContractController::class, 'getDocumentContent']);
 $router->get('/sign/success/{id}', [\Controllers\ContractController::class, 'signSuccessPage']);
 $router->get('/contracts/{id}/company-seal', [\Controllers\ContractController::class, 'companySealPage']);
+$router->post('/contracts/{id}/company-seal', [\Controllers\ContractController::class, 'companySeal']);
+$router->get('/contracts/{id}/{name}/view', [\Controllers\ContractController::class, 'streamPdf']);
+
 // ============================================
 // TASK E2: VERSION CONTROL
 // ============================================
