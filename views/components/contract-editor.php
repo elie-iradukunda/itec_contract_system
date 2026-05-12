@@ -170,37 +170,96 @@ $jsConfig = [
             </section>
 
             <section class="panel-section" data-panel-section="signing">
-                <!-- Feature E4: client choice and hard-copy upload use the existing signing endpoints. -->
-                <div class="panel-header"><h2>Signing workflow</h2><small id="phaseInstruction">Send the approved draft to the client when review is complete.</small></div>
-                <div class="signing-summary">
-                    <div class="lock-status">
-                        <span id="lockPill" class="lock-pill <?= $state === 'DRAFT' ? 'draft' : 'locked' ?>">Draft editable</span>
-                        <small id="lockStatusText">Body editing is open until signing starts.</small>
-                    </div>
-                    <div class="phase-action-grid">
-                        <button id="submitForSigning" class="primary-action" type="button" <?= $isNew ? 'disabled' : '' ?>>Submit for signing</button>
-                        <button id="openSigningChoice" class="secondary-action" type="button" <?= $isNew ? 'disabled' : '' ?>>Client path</button>
-                    </div>
-                    <label class="recipient-field" for="clientEmails">
-                        <span>Client recipient emails</span>
-                        <textarea id="clientEmails" rows="3" placeholder="client@example.com, second@example.com"><?= ui_e($editor_config['client_email'] ?? '') ?></textarea>
-                        <small>Use commas, spaces, or new lines for multiple recipients.</small>
-                    </label>
-                </div>
-                <div class="signature-actions">
-                    <h3>Signature and seal</h3>
-                    <a id="signatureAction" class="signature-action" href="<?= ui_e($jsConfig['signUrl'] ?? '#') ?>">Open signature block</a>
-                    <a id="sealAction" class="signature-action" href="#">Apply company seal</a>
-                    <small id="signatureActionHint">These actions become available as the contract moves through signing.</small>
-                </div>
-                <form id="signedCopyForm" class="upload-box" enctype="multipart/form-data">
-                    <label for="signedCopyFile">Returned hard-copy scan</label>
-                    <input id="signedCopyFile" name="signed_copy" type="file" accept=".pdf,.png,.jpg,.jpeg">
-                    <button type="submit">Upload signed scan</button>
-                    <small id="uploadMessage">Attach the scan after the client signs a printed copy.</small>
-                </form>
-            </section>
+    <div class="panel-header">
+        <h2>Signing workflow</h2>
+        <small id="phaseInstruction">
+            <?php if ($state === 'AWAITING_COMPANY'): ?>
+                Contract is ready for company signature and seal
+            <?php elseif ($state === 'CLIENT_SIGNED'): ?>
+                Client has signed. Ready for company action.
+            <?php elseif ($state === 'AWAITING_CLIENT'): ?>
+                Waiting for client signature
+            <?php elseif ($state === 'FULLY_SIGNED'): ?>
+                Contract fully executed
+            <?php else: ?>
+                Send the approved draft to the client when review is complete.
+            <?php endif; ?>
+        </small>
+    </div>
 
+    <div class="signing-summary">
+        <div class="lock-status">
+            <span id="lockPill" class="lock-pill <?= $state === 'DRAFT' ? 'draft' : 'locked' ?>">
+                <?= $state === 'DRAFT' ? 'Draft editable' : 'Body locked' ?>
+            </span>
+            <small id="lockStatusText">
+                <?= $state === 'DRAFT' ? 'Body editing is open until signing starts.' : 'Document body is frozen. Only signature and seal actions remain.' ?>
+            </small>
+        </div>
+
+        <div class="">
+            <!-- Submit for Signing (only in DRAFT) -->
+            <?php if ($state === 'DRAFT'): ?>
+                <button id="submitForSigning" class="primary-action" type="button" <?= $isNew ? 'disabled' : '' ?>>
+                    Submit for signing
+                </button>
+            <?php endif; ?>
+
+            <!-- Apply Company Seal (only in AWAITING_COMPANY) -->
+            <?php if ($state === 'AWAITING_COMPANY'): ?>
+                <a href="<?= BASE_URL ?>/contracts/<?= $contractId ?>/company-seal"  class="btn btn-primary">
+                    <i class="fas fa-stamp"></i> Apply Company Seal
+                </a>
+            <?php endif; ?>
+
+            <!-- Client Signing Choice (only in AWAITING_CLIENT) -->
+            <?php if ($state === 'AWAITING_CLIENT'): ?>
+                <button id="openSigningChoice" class="secondary-action" type="button">
+                    Client signing options
+                </button>
+            <?php endif; ?>
+
+            <!-- Download Final PDF (only in FULLY_SIGNED) -->
+            <?php if ($state === 'FULLY_SIGNED'): ?>
+                <a href="<?= BASE_URL ?>/contracts/<?= $contractId ?>/final-pdf" class="primary-action" style="display: inline-block; text-align: center;">
+                    <i class="fas fa-download"></i> Download Final PDF
+                </a>
+            <?php endif; ?>
+        </div>
+
+        <!-- Client Email Field (only visible in DRAFT or AWAITING_CLIENT) -->
+        <?php if (in_array($state, ['DRAFT', 'AWAITING_CLIENT'])): ?>
+            <label class="recipient-field" for="clientEmails">
+                <span>Client recipient emails</span>
+                <textarea id="clientEmails" rows="3" placeholder="client@example.com, second@example.com"><?= ui_e($editor_config['client_email'] ?? '') ?></textarea>
+                <small>Use commas, spaces, or new lines for multiple recipients.</small>
+            </label>
+        <?php endif; ?>
+    </div>
+
+    <!-- Signature Actions (visible after client signed) -->
+    <?php if (in_array($state, ['CLIENT_SIGNED', 'AWAITING_COMPANY'])): ?>
+        <div class="signature-actions">
+            <h3>Next steps</h3>
+            <?php if ($state === 'CLIENT_SIGNED'): ?>
+                <p class="text-muted">Client signature has been recorded. Proceed to apply company seal.</p>
+            <?php endif; ?>
+            <?php if ($state === 'AWAITING_COMPANY'): ?>
+                <p class="text-muted">Review the contract and apply the company seal to finalize.</p>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
+
+    <!-- Hard Copy Upload (only in AWAITING_CLIENT) -->
+    <?php if ($state === 'AWAITING_CLIENT'): ?>
+        <form id="signedCopyForm" class="upload-box" enctype="multipart/form-data">
+            <label for="signedCopyFile">Returned hard-copy scan</label>
+            <input id="signedCopyFile" name="signed_copy" type="file" accept=".pdf,.png,.jpg,.jpeg">
+            <button type="submit">Upload signed scan</button>
+            <small id="uploadMessage">Attach the scan after the client signs a printed copy.</small>
+        </form>
+    <?php endif; ?>
+</section>
             <section class="panel-section" data-panel-section="distribution">
                 <!-- Feature E5: distribution unlocks after company execution is complete. -->
                 <div class="panel-header"><h2>Final distribution</h2><small>Available after the contract is fully signed.</small></div>
@@ -224,27 +283,4 @@ $jsConfig = [
     <?php endif; ?>
 </section>
 
-<div id="signingModal" class="modal-backdrop hidden">
-    <section class="modal">
-        <header class="modal-header">
-            <div><p>client execution</p><h2>Choose signing path</h2></div>
-            <button id="closeSigningModal" class="icon-button" type="button" aria-label="Close"><?= ui_icon('x-lg') ?></button>
-        </header>
-        <div class="choice-grid">
-            <article class="choice-card">
-                <strong><?= ui_icon('pen') ?> Digital sign</strong>
-                <small>Client signs in the portal and the document body locks immediately.</small>
-                <button type="button" data-signing-choice="digital">Use digital signing</button>
-            </article>
-            <article class="choice-card">
-                <strong><?= ui_icon('printer') ?> Hard copy</strong>
-                <small>Generate a print-ready PDF, then upload the returned signed scan.</small>
-                <button type="button" data-signing-choice="hard_copy">Generate hard copy</button>
-            </article>
-        </div>
-        <div class="modal-actions">
-            <span id="signingMessage">Choose the path requested by the client.</span>
-            <a href="<?= ui_e($jsConfig['printPdfUrl'] ?? '#') ?>" target="_blank" rel="noopener">Print PDF</a>
-        </div>
-    </section>
-</div>
+
