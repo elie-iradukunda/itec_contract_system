@@ -103,20 +103,21 @@ class UploadController extends Controller
     }
 }
 
-    private function logHardCopyUpload($contractId, $path)
-    {
-        $db = Database::getInstance()->getConnection();
-        $stmt = $db->prepare("
-            INSERT INTO doc_signature_audit (contract_id, signer_id, event_type, doc_hash, ip_address, user_agent, timestamp)
-            VALUES (?, 'hard-copy-client', 'hard_copy_uploaded', ?, ?, ?, NOW())
-        ");
-        $stmt->execute([
-            $contractId,
-            hash_file('sha256', $path),
-            $_SERVER['REMOTE_ADDR'] ?? null,
-            $_SERVER['HTTP_USER_AGENT'] ?? null,
-        ]);
-    }
+   private function logHardCopyUpload($contractId, $path)
+{
+    $db = Database::getInstance()->getConnection();
+    $stmt = $db->prepare("
+        INSERT INTO doc_signature_audit (contract_id, signer_id, event_type, doc_hash, uploaded_file_path, ip_address, user_agent, timestamp)
+        VALUES (?, 'hard-copy-client', 'hard_copy_uploaded', ?, ?, ?, ?, NOW())
+    ");
+    $stmt->execute([
+        $contractId,
+        hash_file('sha256', $path),
+        $path,
+        $_SERVER['REMOTE_ADDR'] ?? null,
+        $_SERVER['HTTP_USER_AGENT'] ?? null,
+    ]);
+}
 
    
 
