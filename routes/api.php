@@ -220,7 +220,7 @@ $router->get('/api/contracts/{id}', [\Controllers\ContractController::class, 'ap
 $router->post('/api/contracts', [\Controllers\ContractController::class, 'apiStore']);
 $router->put('/api/contracts/{id}', [\Controllers\ContractController::class, 'apiUpdate']);
 $router->delete('/api/contracts/{id}', [\Controllers\ContractController::class, 'apiDelete']);
-
+$router->post('/api/contracts/{id}/seal', [\Controllers\SignatureController::class, 'applySeal']);
 // ============================================
 // HARD COPY UPLOAD API
 // ============================================
