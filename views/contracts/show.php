@@ -16,8 +16,8 @@ $pageHeading = $contract['title'] ?? 'Contract Details';
 $pageEyebrow = 'contract workspace';
 $pageLead = 'A guided test workspace for checking drafting, client signing, company execution, and final distribution.';
 $pageActions = [
-    '<a class="button ghost" href="' . BASE_URL . '/contracts">Back to Contracts</a>',
-    '<a class="button" href="' . BASE_URL . '/contracts/' . $contractId . '/editor">Open Workspace</a>',
+    '<a class="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-xl text-slate-700 hover:bg-slate-50 transition text-sm font-medium" href="' . BASE_URL . '/contracts">← Back to Contracts</a>',
+    '<a class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-white text-sm font-medium transition shadow-sm" href="' . BASE_URL . '/contracts/' . $contractId . '/editor">Open Workspace</a>',
 ];
 
 $phaseMap = [
@@ -98,95 +98,164 @@ $clientName = $contract['client_name'] ?? $contract['company_name'] ?? 'Client p
 $clientEmail = $contract['client_email'] ?? $contract['email'] ?? 'Not provided';
 $createdAt = !empty($contract['created_at']) ? date('M j, Y', strtotime($contract['created_at'])) : 'Not recorded';
 
+// Helper function to get status badge color based on state
+function getStatusBadgeClass($state) {
+    return match ($state) {
+        'DRAFT' => 'bg-indigo-100 text-indigo-700 border-indigo-200',
+        'AWAITING_CLIENT' => 'bg-amber-100 text-amber-700 border-amber-200',
+        'CLIENT_SIGNED' => 'bg-blue-100 text-blue-700 border-blue-200',
+        'AWAITING_COMPANY' => 'bg-emerald-100 text-emerald-700 border-emerald-200',
+        'FULLY_SIGNED' => 'bg-purple-100 text-purple-700 border-purple-200',
+        default => 'bg-slate-100 text-slate-700 border-slate-200',
+    };
+}
+
 ob_start();
 ?>
-<section class="status-banner contract-focus-banner">
-    <span class="status-pill <?= ui_status_class($state) ?>"><?= ui_e(ui_status_label($state)) ?></span>
-    <div>
-        <strong><?= ui_e($phase['label']) ?></strong>
-        <div class="muted-copy"><?= ui_e($phase['summary']) ?></div>
-    </div>
-</section>
 
-<section class="panel-grid">
-    <article class="surface info-card">
-        <strong><?= ui_icon('person-badge') ?> Client</strong>
-        <span><?= ui_e($clientName) ?></span>
-    </article>
-    <article class="surface info-card">
-        <strong><?= ui_icon('envelope') ?> Contact</strong>
-        <span><?= ui_e($clientEmail) ?></span>
-    </article>
-    <article class="surface info-card">
-        <strong><?= ui_icon('calendar-check') ?> Created</strong>
-        <span><?= ui_e($createdAt) ?></span>
-    </article>
-</section>
-
-<section class="flow-board surface">
-    <div class="section-head compact">
-        <div>
-            <p>lifecycle progress</p>
-            <h2>Contract phase journey</h2>
-        </div>
-        <a href="<?= ui_e($phase['href']) ?>"><?= ui_e($phase['primary']) ?></a>
-    </div>
-    <div class="phase-grid">
-        <?php foreach ($stateOrder as $index => $phaseState): ?>
-            <?php
-                $phaseClass = $index < $currentIndex ? 'complete' : ($index === $currentIndex ? 'active' : '');
-                $phaseLabel = $phaseMap[$phaseState]['label'];
-            ?>
-            <article class="phase-card <?= ui_e($phaseClass) ?>">
-                <span class="phase-index"><?= $index + 1 ?></span>
-                <strong><?= ui_e($phaseLabel) ?></strong>
-                <small><?= ui_e($phaseMap[$phaseState]['summary']) ?></small>
-                <div class="phase-actions">
-                    <span><?= ui_e($phaseMap[$phaseState]['actor']) ?></span>
-                    <span><?= ui_e($phaseMap[$phaseState]['body']) ?></span>
+<div class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 py-8 px-4">
+    <div class="max-w-7xl mx-auto space-y-8">
+        
+        <!-- Status Banner -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-4">
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border <?= getStatusBadgeClass($state) ?>">
+                    <?= ui_e(ui_status_label($state)) ?>
+                </span>
+                <div>
+                    <strong class="text-slate-800"><?= ui_e($phase['label']) ?></strong>
+                    <p class="text-sm text-slate-500 mt-0.5"><?= ui_e($phase['summary']) ?></p>
                 </div>
-            </article>
-        <?php endforeach; ?>
-    </div>
-</section>
-
-<section class="content-split">
-    <div class="surface surface-pad">
-        <div class="section-head compact">
-            <div>
-                <p>functional test</p>
-                <h2>What to test now</h2>
             </div>
         </div>
-        <div class="test-checklist">
-            <?php foreach ($phase['checklist'] as $item): ?>
-                <div class="test-check">
-                    <span><?= ui_icon('check2-circle') ?></span>
-                    <p><?= ui_e($item) ?></p>
-                </div>
-            <?php endforeach; ?>
-        </div>
-    </div>
 
-    <aside class="surface surface-pad">
-        <div class="section-head compact">
-            <div>
-                <p>next action</p>
-                <h2><?= ui_e($phase['label']) ?></h2>
+        <!-- Client Info Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex items-center gap-3">
+                <i class="bi bi-person-badge text-indigo-500 text-2xl"></i>
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Client</p>
+                    <p class="text-slate-800 font-medium"><?= ui_e($clientName) ?></p>
+                </div>
+            </div>
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex items-center gap-3">
+                <i class="bi bi-envelope text-indigo-500 text-2xl"></i>
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Contact</p>
+                    <p class="text-slate-800 font-medium"><?= ui_e($clientEmail) ?></p>
+                </div>
+            </div>
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex items-center gap-3">
+                <i class="bi bi-calendar-check text-indigo-500 text-2xl"></i>
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Created</p>
+                    <p class="text-slate-800 font-medium"><?= ui_e($createdAt) ?></p>
+                </div>
             </div>
         </div>
-        <p class="muted-copy"><?= ui_e($phase['summary']) ?></p>
-        <div class="detail-stack">
-            <div><strong>Current actor</strong><span><?= ui_e($phase['actor']) ?></span></div>
-            <div><strong>Document body</strong><span><?= ui_e($phase['body']) ?></span></div>
-            <div><strong>Contract ID</strong><span>#<?= $contractId ?></span></div>
+
+        <!-- Lifecycle Progress Board -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap justify-between items-center">
+                <div>
+                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">lifecycle progress</p>
+                    <h2 class="text-xl font-bold text-slate-800">Contract phase journey</h2>
+                </div>
+                <a href="<?= ui_e($phase['href']) ?>" class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-white text-sm font-medium transition shadow-sm">
+                    <?= ui_e($phase['primary']) ?>
+                </a>
+            </div>
+            <div class="p-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <?php foreach ($stateOrder as $index => $phaseState): ?>
+                        <?php
+                            $isComplete = $index < $currentIndex;
+                            $isActive = $index === $currentIndex;
+                            $phaseLabel = $phaseMap[$phaseState]['label'];
+                            $phaseSummary = $phaseMap[$phaseState]['summary'];
+                            $actor = $phaseMap[$phaseState]['actor'];
+                            $bodyState = $phaseMap[$phaseState]['body'];
+                        ?>
+                        <div class="relative rounded-xl border transition-all <?= $isActive ? 'border-indigo-300 bg-indigo-50/30 shadow-md' : ($isComplete ? 'border-emerald-200 bg-emerald-50/20' : 'border-slate-200 bg-white hover:shadow-sm') ?>">
+                            <div class="p-4">
+                                <div class="flex items-center gap-2 mb-3">
+                                    <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold <?= $isActive ? 'bg-indigo-600 text-white' : ($isComplete ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500') ?>">
+                                        <?= $index + 1 ?>
+                                    </span>
+                                    <strong class="text-sm text-slate-800"><?= ui_e($phaseLabel) ?></strong>
+                                </div>
+                                <p class="text-xs text-slate-500 mb-3"><?= ui_e($phaseSummary) ?></p>
+                                <div class="flex justify-between items-center text-xs text-slate-400 border-t border-slate-100 pt-2 mt-2">
+                                    <span><?= ui_e($actor) ?></span>
+                                    <span class="px-2 py-0.5 rounded-full bg-slate-100"><?= ui_e($bodyState) ?></span>
+                                </div>
+                            </div>
+                            <?php if ($isActive): ?>
+                                <div class="absolute -top-1 -right-1 w-3 h-3 bg-indigo-500 rounded-full animate-pulse"></div>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
         </div>
-        <div class="form-actions">
-            <a class="button" href="<?= ui_e($phase['href']) ?>"><?= ui_e($phase['primary']) ?></a>
-            <a class="button ghost" href="<?= BASE_URL ?>/contracts/<?= $contractId ?>/audit">Open Audit</a>
+
+        <!-- Functional Test & Next Action Split -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Left: Checklist -->
+            <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">functional test</p>
+                    <h2 class="text-xl font-bold text-slate-800">What to test now</h2>
+                </div>
+                <div class="p-6 space-y-3">
+                    <?php foreach ($phase['checklist'] as $item): ?>
+                        <div class="flex items-start gap-3 p-3 rounded-xl bg-slate-50/50 hover:bg-slate-100 transition">
+                            <i class="bi bi-check2-circle text-emerald-500 text-lg mt-0.5"></i>
+                            <p class="text-sm text-slate-700"><?= ui_e($item) ?></p>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+            <!-- Right: Next Action Card -->
+            <aside class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden sticky top-6 h-fit">
+                <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">next action</p>
+                    <h2 class="text-xl font-bold text-slate-800"><?= ui_e($phase['label']) ?></h2>
+                </div>
+                <div class="p-6 space-y-5">
+                    <p class="text-sm text-slate-600"><?= ui_e($phase['summary']) ?></p>
+                    
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center py-2 border-b border-slate-100">
+                            <span class="text-sm font-medium text-slate-500">Current actor</span>
+                            <span class="text-sm text-slate-800"><?= ui_e($phase['actor']) ?></span>
+                        </div>
+                        <div class="flex justify-between items-center py-2 border-b border-slate-100">
+                            <span class="text-sm font-medium text-slate-500">Document body</span>
+                            <span class="text-sm text-slate-800"><?= ui_e($phase['body']) ?></span>
+                        </div>
+                        <div class="flex justify-between items-center py-2 border-b border-slate-100">
+                            <span class="text-sm font-medium text-slate-500">Contract ID</span>
+                            <span class="text-sm font-mono text-slate-800">#<?= $contractId ?></span>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3 pt-4">
+                        <a href="<?= ui_e($phase['href']) ?>" class="flex-1 text-center px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-white text-sm font-medium transition shadow-sm">
+                            <?= ui_e($phase['primary']) ?>
+                        </a>
+                        <a href="<?= BASE_URL ?>/contracts/<?= $contractId ?>/audit" class="px-4 py-2.5 border border-slate-300 rounded-xl text-slate-700 hover:bg-slate-50 transition text-sm font-medium">
+                            Open Audit
+                        </a>
+                    </div>
+                </div>
+            </aside>
         </div>
-    </aside>
-</section>
+    </div>
+</div>
+
 <?php
 $content = ob_get_clean();
 require dirname(__DIR__) . '/layouts/app.php';
+?>
