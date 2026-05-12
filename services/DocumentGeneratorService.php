@@ -93,18 +93,9 @@ class DocumentGeneratorService
         // --- Footer Section ---
         $this->addFooter($section);
         
-<<<<<<< HEAD
         // Save the document
         $objWriter = IOFactory::createWriter($phpWord, 'Word2007');
         $objWriter->save($filePath);
-=======
-        try {
-            $objWriter = IOFactory::createWriter($phpWord, 'Word2007');
-            $objWriter->save($filePath);
-        } catch (\Throwable $error) {
-            return $this->generateSimpleContract($filePath, $contractId, $data);
-        }
->>>>>>> 958ad639205705ea1da6d0db67e6337b89b4f856
         
         // Validate generated file using ZipArchive
         $zip = new ZipArchive();
@@ -248,7 +239,6 @@ class DocumentGeneratorService
         $footer->addTextBreak(1);
         $footer->addPreserveText('Page {PAGE} of {NUMPAGES}', ['size' => 8], $center);
     }
-<<<<<<< HEAD
     
     public function updateContractContent($contractId, $content)
     {
@@ -278,84 +268,3 @@ class DocumentGeneratorService
         return $this->generateContract($contractId, $data);
     }
 }
-=======
-
-    private function documentXml(array $lines)
-    {
-        $paragraphs = array_map(function ($line) {
-            return '<w:p><w:r><w:t xml:space="preserve">' . $this->escapeXml($line) . '</w:t></w:r></w:p>';
-        }, $lines);
-
-        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            . '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-            . '<w:body>' . implode('', $paragraphs)
-            . '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'
-            . '</w:body></w:document>';
-    }
-
-    private function contentTypesXml()
-    {
-        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            . '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-            . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-            . '<Default Extension="xml" ContentType="application/xml"/>'
-            . '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
-            . '</Types>';
-    }
-
-    private function rootRelsXml()
-    {
-        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
-            . '</Relationships>';
-    }
-
-    private function documentRelsXml()
-    {
-        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>';
-    }
-
-    private function escapeXml($text)
-    {
-        return htmlspecialchars((string) $text, ENT_XML1 | ENT_QUOTES, 'UTF-8');
-    }
-
-    private function writeZip($path, array $files)
-    {
-        $localData = '';
-        $centralData = '';
-        [$dosTime, $dosDate] = $this->dosTimestamp();
-
-        foreach ($files as $name => $contents) {
-            $offset = strlen($localData);
-            $size = strlen($contents);
-            $crc = hexdec(hash('crc32b', $contents));
-            $nameLength = strlen($name);
-
-            $localData .= pack('VvvvvvVVVvv', 0x04034b50, 20, 0, 0, $dosTime, $dosDate, $crc, $size, $size, $nameLength, 0);
-            $localData .= $name . $contents;
-
-            $centralData .= pack('VvvvvvvVVVvvvvvVV', 0x02014b50, 20, 20, 0, 0, $dosTime, $dosDate, $crc, $size, $size, $nameLength, 0, 0, 0, 0, 0, $offset);
-            $centralData .= $name;
-        }
-
-        $centralOffset = strlen($localData);
-        $centralSize = strlen($centralData);
-        $count = count($files);
-
-        $eocd = pack('VvvvvVVv', 0x06054b50, 0, 0, $count, $count, $centralSize, $centralOffset, 0);
-        file_put_contents($path, $localData . $centralData . $eocd);
-    }
-
-    private function dosTimestamp()
-    {
-        $now = getdate();
-        $time = ($now['hours'] << 11) | ($now['minutes'] << 5) | (int) ($now['seconds'] / 2);
-        $date = (($now['year'] - 1980) << 9) | ($now['mon'] << 5) | $now['mday'];
-
-        return [$time, $date];
-    }
-}
->>>>>>> 958ad639205705ea1da6d0db67e6337b89b4f856
