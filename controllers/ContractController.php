@@ -74,6 +74,29 @@ class ContractController extends Controller
         header('Location: ' . BASE_URL . '/contracts/show/' . (int) $id);
         exit;
     }
+    public function companySealPage($id)
+{
+    $stmt = $this->db->prepare("SELECT * FROM contracts WHERE id = ?");
+    $stmt->execute([$id]);
+    $contract = $stmt->fetch();
+    
+    if (!$contract) {
+        $this->view('errors/404', ['message' => 'Contract not found']);
+        return;
+    }
+    
+    // Check if contract is in AWAITING_COMPANY state
+    if ($contract['signing_state'] !== 'AWAITING_COMPANY') {
+        $_SESSION['error'] = 'Contract is not ready for company seal. Current state: ' . $contract['signing_state'];
+        header('Location: ' . BASE_URL . '/contracts/show/' . $id);
+        return;
+    }
+    
+    $this->view('contracts/company-seal', [
+        'contract' => $contract,
+        'title' => 'Apply Company Seal'
+    ]);
+}
     public function signSuccessPage($id)
         {
             unset($_SESSION['signing_authorized']);
