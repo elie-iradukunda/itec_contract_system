@@ -1033,9 +1033,56 @@ private function findLibreOfficeBinary(): ?string
 }
     
 
-public function generatePrintPDF($id)
+ public function generatePrintPDF($id)
 {
-    $this->outputGeneratedContractPdf((int) $id, 'inline', 'contract_' . (int) $id . '.pdf');
+    // Get contract data
+    $stmt = $this->db->prepare("SELECT file_path, title FROM contracts WHERE id = ?");
+    $stmt->execute([$id]);
+    $contract = $stmt->fetch();
+    
+    if (!$contract) {
+        http_response_code(404);
+        echo "Contract not found";
+        return;
+    }
+    
+    $filePath = $contract['file_path'];
+    
+    if (!file_exists($filePath)) {
+        http_response_code(404);
+        echo $filePath;
+        echo "Contract file not found";
+        return;
+    }
+    
+    // Create temp output file
+    $tempDir = __DIR__ . '/../storage/temp/';
+    if (!is_dir($tempDir)) {
+        mkdir($tempDir, 0777, true);
+    }
+    
+    $result = $this->convertToPdf($filePath);
+    
+    if (!$result) {
+        http_response_code(500);
+        echo "Failed to generate PDF";
+        return;
+    }
+   
+    
+    // Set headers for PDF download
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: attachment; filename="contract_' . $id . '.pdf"');
+    header('Cache-Control: private, max-age=0, must-revalidate');
+    header('Pragma: public');
+    header('Content-Length: ' . filesize($result));
+    
+    // Output the PDF file
+    readfile($result);
+    
+    // Clean up temp file
+    unlink($result);
+    exit;
 }
 
 private function outputGeneratedContractPdf($id, $disposition = 'inline', $filename = null)
