@@ -47,7 +47,7 @@ $router->get('/contracts/{id}/editor', [\Controllers\ContractController::class, 
 
 $router->post('/contracts/{id}/save', [\Controllers\ContractController::class, 'saveDocument']);
 $router->get('/contracts/{id}/content', [\Controllers\ContractController::class, 'getDocumentContent']);
-
+$router->get('/sign/success/{id}', [\Controllers\ContractController::class, 'signSuccessPage']);
 // ============================================
 // TASK E2: VERSION CONTROL
 // ============================================
