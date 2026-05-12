@@ -6,6 +6,7 @@
     const badge = document.getElementById('statusBadge');
     const banner = document.getElementById('readOnlyBanner');
     const versionsList = document.getElementById('versionsList');
+    const versionPreview = document.getElementById('versionPreview');
     const versionCount = document.getElementById('versionCount');
     const panelTabs = document.querySelectorAll('[data-panel-tab]');
     const panelSections = document.querySelectorAll('[data-panel-section]');
@@ -38,9 +39,25 @@
     const finalPdfPreview = document.getElementById('finalPdfPreview');
     const createForm = document.getElementById('contractCreateForm');
     const clientEmails = document.getElementById('clientEmails');
-    let editorInstance = null;
+    const sendClientPanel = document.querySelector('[data-send-client-panel]');
+    const sendClientStatus = document.getElementById('sendClientStatus');
+    const sendClientTitle = document.getElementById('sendClientTitle');
+    const sendClientSubtitle = document.getElementById('sendClientSubtitle');
+    const sendClientActions = document.getElementById('sendClientActions');
+    const sendAwaitingActions = document.getElementById('sendAwaitingActions');
+    const sendClientFootnote = document.getElementById('sendClientFootnote');
+    const recipientPreview = document.getElementById('recipientPreview');
+    const recipientValidation = document.getElementById('recipientValidation');
+    const sendResult = document.getElementById('sendResult');
+    const submitSigningSpinner = document.getElementById('submitSigningSpinner');
+    const submitSigningText = document.getElementById('submitSigningText');
+    const draftBuilderRoot = document.getElementById('draftBuilderRoot');
+    let draftBodyEditor = null;
     let currentState = config.signingState || 'DRAFT';
     let isSaving = false;
+    let isSubmittingForSigning = false;
+    let submittedRecipients = [];
+    let selectedVersionNo = null;
 
     if (!editorElement || !saveButton) return;
 
@@ -58,11 +75,8 @@
     }
 
     function setEditorReadOnly(readOnly) {
-        if (editorInstance && editorInstance.mode) {
-            editorInstance.mode.set(readOnly ? 'readonly' : 'design');
-        } else if (editorElement) {
-            editorElement.readOnly = readOnly;
-        }
+        draftBodyEditor?.setReadOnly(readOnly);
+        if (editorElement) editorElement.readOnly = readOnly;
     }
 
     function applySigningState(state) {
@@ -82,6 +96,7 @@
         renderRestoreLocks();
         renderChangeLocks();
         renderDistributionState();
+        signedCopyForm?.classList.toggle('hidden', currentState !== 'AWAITING_CLIENT');
 
         if (previousState !== currentState && previousState) {
             setMessage(isDraft ? 'Contract returned to draft editing' : 'Signing state changed. Body editing is locked.', isDraft ? 'success' : 'error');
@@ -89,7 +104,7 @@
     }
 
     function getEditorData() {
-        return editorInstance ? editorInstance.getContent() : editorElement.value.trim();
+        return draftBodyEditor ? draftBodyEditor.getContent() : editorElement.value.trim();
     }
 
     const sharedUi = window.ContractUi || {};
@@ -113,6 +128,12 @@
         return template.replace('__VERSION__', encodeURIComponent(versionNo));
     }
 
+    function versionPreviewUrl(versionNo) {
+        return config.versionPreviewUrlTemplate
+            ? config.versionPreviewUrlTemplate.replace('__VERSION__', encodeURIComponent(versionNo))
+            : '';
+    }
+
     function changeUrl(template, changeId) {
         return template.replace('__CHANGE__', encodeURIComponent(changeId));
     }
@@ -127,6 +148,808 @@
                 return { success: response.ok, message: text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() };
             }
         };
+
+    function isValidEmail(value) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+    }
+
+    function parseRecipientInput(value) {
+        const rawItems = String(value || '')
+            .split(/[\s,;]+/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+        const seen = new Set();
+        const valid = [];
+        const invalid = [];
+
+        rawItems.forEach((item) => {
+            const key = item.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+
+            if (isValidEmail(item)) {
+                valid.push(item);
+            } else {
+                invalid.push(item);
+            }
+        });
+
+        return { valid, invalid, total: rawItems.length };
+    }
+
+    function recipientCountText(count) {
+        if (!count) return 'No recipients added';
+        return count + ' recipient' + (count === 1 ? '' : 's') + ' ready';
+    }
+
+    function renderRecipientPreview(parsed) {
+        if (!recipientPreview) return;
+        const recipients = parsed || parseRecipientInput(clientEmails?.value || '');
+        const chips = []
+            .concat(recipients.valid.map((email) => (
+                '<span class="recipient-chip"><i class="bi bi-check2-circle" aria-hidden="true"></i>' + escapeHtml(email) + '</span>'
+            )))
+            .concat(recipients.invalid.map((email) => (
+                '<span class="recipient-chip invalid"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i>' + escapeHtml(email) + '</span>'
+            )));
+
+        recipientPreview.classList.toggle('empty', chips.length === 0);
+        recipientPreview.innerHTML = chips.length ? chips.join('') : 'Add the client email to prepare the invitation.';
+    }
+
+    function setSubmitSigningLoading(loading, label) {
+        isSubmittingForSigning = Boolean(loading);
+        submitSigningSpinner?.classList.toggle('hidden', !loading);
+        if (submitSigningText) submitSigningText.textContent = loading ? (label || 'Sending email...') : 'Save draft and email client';
+        renderSendClientState();
+    }
+
+    function showSendResult(type, title, detail) {
+        if (!sendResult) return;
+        sendResult.classList.remove('hidden', 'error');
+        if (type === 'error') sendResult.classList.add('error');
+        sendResult.innerHTML = '<strong>' + escapeHtml(title) + '</strong>' + (detail ? '<span>' + escapeHtml(detail) + '</span>' : '');
+    }
+
+    function clearSendResult() {
+        sendResult?.classList.add('hidden');
+        sendResult?.classList.remove('error');
+    }
+
+    function renderSendClientState() {
+        if (!sendClientPanel) return;
+
+        const parsed = parseRecipientInput(clientEmails?.value || '');
+        const isDraft = isDraftState(currentState);
+        const isAwaiting = currentState === 'AWAITING_CLIENT';
+        const hasValidRecipients = parsed.valid.length > 0;
+        const hasInvalidRecipients = parsed.invalid.length > 0;
+        const canSubmit = isDraft && hasValidRecipients && !hasInvalidRecipients && !isSubmittingForSigning && !config.isNew;
+
+        renderRecipientPreview(parsed);
+
+        sendClientPanel.classList.toggle('is-awaiting', isAwaiting);
+        sendClientPanel.classList.toggle('is-complete', !isDraft && !isAwaiting);
+
+        if (sendClientStatus) {
+            const label = isDraft ? (hasValidRecipients && !hasInvalidRecipients ? 'Ready' : 'Needs email') : isAwaiting ? 'Sent' : 'Locked';
+            const statusClass = isAwaiting ? ' awaiting' : !isDraft ? ' locked' : '';
+            sendClientStatus.textContent = label;
+            sendClientStatus.className = 'send-status-pill' + statusClass;
+        }
+
+        if (sendClientTitle) {
+            sendClientTitle.textContent = isAwaiting ? 'Invitation sent' : isDraft ? 'Client invitation' : 'Client step locked';
+        }
+
+        if (sendClientSubtitle) {
+            sendClientSubtitle.textContent = isAwaiting
+                ? 'The contract is waiting for the client signature.'
+                : isDraft
+                    ? 'Email the secure signing link to the client.'
+                    : 'The contract has moved past client invitation.';
+        }
+
+        if (recipientValidation) {
+            if (hasInvalidRecipients) {
+                recipientValidation.textContent = 'Fix invalid email: ' + parsed.invalid.join(', ');
+                recipientValidation.className = 'send-validation error';
+            } else if (hasValidRecipients) {
+                recipientValidation.textContent = recipientCountText(parsed.valid.length);
+                recipientValidation.className = 'send-validation success';
+            } else {
+                recipientValidation.textContent = 'At least one valid client email is required.';
+                recipientValidation.className = 'send-validation';
+            }
+        }
+
+        if (clientEmails) {
+            clientEmails.readOnly = !isDraft;
+            clientEmails.setAttribute('aria-invalid', hasInvalidRecipients ? 'true' : 'false');
+        }
+
+        if (submitForSigning) {
+            submitForSigning.disabled = !canSubmit;
+            submitForSigning.classList.toggle('hidden', !isDraft);
+        }
+
+        sendClientActions?.classList.toggle('hidden', !isDraft);
+        sendAwaitingActions?.classList.toggle('hidden', !isAwaiting);
+
+        if (sendClientFootnote) {
+            sendClientFootnote.textContent = config.isNew
+                ? 'Save the draft before sending it to the client.'
+                : 'Latest edits are saved before the secure signing link is emailed.';
+        }
+
+        if (isAwaiting && sendResult && sendResult.classList.contains('hidden')) {
+            const count = submittedRecipients.length || parsed.valid.length;
+            showSendResult('success', 'Client invitation active', count ? 'Waiting on ' + count + ' recipient' + (count === 1 ? '.' : 's.') : 'Waiting on the client signature.');
+        }
+    }
+
+    function createDraftBodyEditor(textarea, root) {
+        const sectionTypes = [
+            { type: 'heading', label: 'Clause heading', shortLabel: 'Heading', icon: 'bi-type-h2', color: 'blue' },
+            { type: 'paragraph', label: 'Rich paragraph', shortLabel: 'Paragraph', icon: 'bi-text-paragraph', color: 'teal' },
+            { type: 'text', label: 'Plain text clause', shortLabel: 'Text', icon: 'bi-card-text', color: 'slate' },
+            { type: 'list', label: 'List or checklist', shortLabel: 'List', icon: 'bi-list-check', color: 'amber' },
+            { type: 'checkbox', label: 'Acceptance checkbox', shortLabel: 'Checkbox', icon: 'bi-check2-square', color: 'rose' },
+            { type: 'date', label: 'Date line', shortLabel: 'Date', icon: 'bi-calendar3', color: 'indigo' },
+            { type: 'signature', label: 'Signature block', shortLabel: 'Signature', icon: 'bi-pen', color: 'emerald' }
+        ];
+        let sections = parseInitialContent(textarea.value);
+        let selectedType = 'paragraph';
+        let nextId = sections.length + 1;
+        let readOnly = false;
+        const quills = new Map();
+
+        function id(prefix) {
+            const value = prefix + '-' + nextId;
+            nextId += 1;
+            return value;
+        }
+
+        function typeMeta(type) {
+            return sectionTypes.find((item) => item.type === type) || sectionTypes[1];
+        }
+
+        function parseInitialContent(html) {
+            const cleaned = String(html || '').trim();
+            if (!cleaned || cleaned === '<p></p>' || cleaned === '<p><br></p>') return [];
+
+            const template = document.createElement('template');
+            template.innerHTML = cleaned;
+            const savedSections = Array.from(template.content.querySelectorAll('[data-draft-section]'));
+            if (!savedSections.length) {
+                return sectionsFromGeneratedDocument(cleaned);
+            }
+
+            const parsedSections = savedSections.map((node, index) => {
+                const type = node.getAttribute('data-draft-section') || 'paragraph';
+                const base = {
+                    id: 'section-' + index,
+                    type,
+                    label: node.getAttribute('data-label') || '',
+                    content: '',
+                    note: ''
+                };
+
+                if (type === 'heading') {
+                    base.heading = cleanStoredHeading(node.querySelector('h1,h2,h3,p strong')?.textContent?.trim() || 'Clause heading');
+                    base.note = node.querySelector('[data-section-note]')?.textContent?.trim() || '';
+                } else if (type === 'paragraph') {
+                    const contentNode = node.querySelector('[data-section-content]');
+                    base.content = contentNode ? contentNode.innerHTML : node.innerHTML;
+                } else if (type === 'text') {
+                    base.content = node.querySelector('[data-section-content]')?.textContent?.trim() || '';
+                } else if (type === 'list') {
+                    base.listStyle = node.getAttribute('data-list-style') || 'bullet';
+                    base.items = Array.from(node.querySelectorAll('[data-list-item]')).map((item, itemIndex) => ({
+                        id: 'item-' + index + '-' + itemIndex,
+                        text: item.getAttribute('data-text') || cleanListText(item.textContent),
+                        checked: item.getAttribute('data-checked') === '1'
+                    }));
+                    if (!base.items.length) base.items = [{ id: 'item-' + index + '-0', text: '', checked: false }];
+                } else if (type === 'checkbox') {
+                    base.checked = node.getAttribute('data-checked') === '1';
+                    base.label = base.label || node.textContent.trim() || 'Acceptance checkbox';
+                } else if (type === 'date') {
+                    base.value = node.getAttribute('data-value') || '';
+                    base.label = base.label || 'Effective date';
+                } else if (type === 'signature') {
+                    base.leftSigner = node.getAttribute('data-left-signer') || 'Client Representative';
+                    base.rightSigner = node.getAttribute('data-right-signer') || 'ITEC Representative';
+                    base.note = node.querySelector('[data-section-note]')?.textContent?.trim() || '';
+                }
+
+                return base;
+            });
+
+            const onlySection = parsedSections[0] || null;
+            if (
+                parsedSections.length === 1
+                && onlySection.type === 'paragraph'
+                && /agreement details|contract ref|client signature/i.test((onlySection.label || '') + ' ' + (onlySection.content || ''))
+            ) {
+                return sectionsFromGeneratedDocument(onlySection.content);
+            }
+
+            return parsedSections;
+        }
+
+        function sectionsFromGeneratedDocument(html) {
+            const lines = extractAgreementLines(html);
+            if (!lines.length) {
+                return [{
+                    id: 'section-0',
+                    type: 'paragraph',
+                    label: 'Imported document body',
+                    content: paragraphsFromLines(htmlToLines(html)),
+                    note: ''
+                }];
+            }
+
+            return groupLinesIntoSections(lines);
+        }
+
+        function extractAgreementLines(html) {
+            const lines = htmlToLines(html);
+            const lower = lines.map((line) => line.toLowerCase());
+            const agreementIndexes = [];
+            lower.forEach((line, index) => {
+                if (line === 'agreement details') agreementIndexes.push(index);
+            });
+
+            let bodyLines = agreementIndexes.length ? lines.slice(agreementIndexes[agreementIndexes.length - 1] + 1) : lines;
+            const signatureIndex = bodyLines.findIndex((line) => {
+                const normalized = line.toLowerCase();
+                return normalized === 'signatures'
+                    || normalized.startsWith('client signature')
+                    || normalized.startsWith('itec solutions')
+                    || normalized.startsWith('authorized signatory');
+            });
+
+            if (signatureIndex >= 0) bodyLines = bodyLines.slice(0, signatureIndex);
+
+            return bodyLines
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .filter((line) => line.toLowerCase() !== 'imported document body');
+        }
+
+        function htmlToLines(html) {
+            const template = document.createElement('template');
+            template.innerHTML = html || '';
+            const blocks = Array.from(template.content.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,td,th,div'));
+            const source = blocks.length ? blocks : [template.content];
+
+            return source
+                .map((node) => (node.textContent || '').replace(/\s+/g, ' ').trim())
+                .filter(Boolean);
+        }
+
+        function groupLinesIntoSections(lines) {
+            const sectionsFromLines = [];
+            let label = '';
+            let content = [];
+
+            function flush() {
+                if (!label && !content.length) return;
+                sectionsFromLines.push({
+                    id: 'section-' + sectionsFromLines.length,
+                    type: 'paragraph',
+                    label: label || 'Contract details',
+                    content: paragraphsFromLines(content),
+                    note: ''
+                });
+                label = '';
+                content = [];
+            }
+
+            lines.forEach((line, index) => {
+                const next = lines[index + 1] || '';
+                if (isLikelySectionTitle(line, next)) {
+                    flush();
+                    label = cleanStoredHeading(line);
+                    return;
+                }
+                content.push(line);
+            });
+
+            flush();
+            return sectionsFromLines.length ? sectionsFromLines : [{
+                id: 'section-0',
+                type: 'paragraph',
+                label: 'Contract details',
+                content: paragraphsFromLines(lines),
+                note: ''
+            }];
+        }
+
+        function isLikelySectionTitle(line, next) {
+            if (/^\d+(\.\d+)*\.?\s+\S/.test(line)) return true;
+            return line.length <= 70 && next.length > 70 && !/[.!?;:]$/.test(line);
+        }
+
+        function paragraphsFromLines(lines) {
+            return (lines || [])
+                .map((line) => String(line || '').trim())
+                .filter(Boolean)
+                .map((line) => '<p>' + escapeHtml(line) + '</p>')
+                .join('');
+        }
+
+        function cleanStoredHeading(value) {
+            return String(value || '').replace(/^\d+(\.\d+)*\.?\s+/, '').trim();
+        }
+
+        function cleanListText(value) {
+            return String(value || '').replace(/^(No\.\s*\d+:|\d+\.|[-*]|\[[x ]\])\s*/i, '').trim();
+        }
+
+        function makeSection(type) {
+            const section = { id: id('section'), type, label: '', content: '', note: '' };
+            if (type === 'heading') section.heading = 'New Clause Heading';
+            if (type === 'paragraph') section.label = 'Draft paragraph';
+            if (type === 'text') section.label = 'Text clause';
+            if (type === 'list') {
+                section.label = 'Key terms';
+                section.listStyle = 'bullet';
+                section.items = [{ id: id('item'), text: '', checked: false }];
+            }
+            if (type === 'checkbox') {
+                section.label = 'The parties accept this clause.';
+                section.checked = false;
+            }
+            if (type === 'date') {
+                section.label = 'Effective date';
+                section.value = '';
+            }
+            if (type === 'signature') {
+                section.leftSigner = 'Client Representative';
+                section.rightSigner = 'ITEC Representative';
+                section.note = 'Signed by the authorised representatives of both parties.';
+            }
+            return section;
+        }
+
+        function sectionById(sectionId) {
+            return sections.find((section) => section.id === sectionId);
+        }
+
+        function itemById(section, itemId) {
+            return (section.items || []).find((item) => item.id === itemId);
+        }
+
+        function collectQuillContent() {
+            quills.forEach((quill, sectionId) => {
+                const section = sectionById(sectionId);
+                if (section) section.content = quill.root.innerHTML;
+            });
+        }
+
+        function sectionTitle(section) {
+            if (section.type === 'heading') return section.heading || 'Clause heading';
+            if (section.type === 'signature') return 'Signature block';
+            if (section.type === 'date') return section.label || 'Date line';
+            return section.label || typeMeta(section.type).label;
+        }
+
+        function renderSection(section, index) {
+            const meta = typeMeta(section.type);
+            const disabled = readOnly ? ' disabled' : '';
+            return [
+                '<article class="draft-section-card" data-section-scroll="' + escapeHtml(section.id) + '">',
+                '<header class="draft-section-head">',
+                '<div class="draft-section-title">',
+                '<span class="draft-section-icon ' + escapeHtml(meta.color) + '"><i class="bi ' + escapeHtml(meta.icon) + '"></i></span>',
+                '<div><small>Section ' + (index + 1) + '</small><strong>' + escapeHtml(meta.label) + '</strong></div>',
+                '</div>',
+                '<div class="draft-section-actions">',
+                '<button type="button" title="Move up" data-section-action="up" data-section-id="' + escapeHtml(section.id) + '"' + disabled + '><i class="bi bi-arrow-up"></i></button>',
+                '<button type="button" title="Move down" data-section-action="down" data-section-id="' + escapeHtml(section.id) + '"' + disabled + '><i class="bi bi-arrow-down"></i></button>',
+                '<button type="button" title="Duplicate" data-section-action="duplicate" data-section-id="' + escapeHtml(section.id) + '"' + disabled + '><i class="bi bi-copy"></i></button>',
+                '<button type="button" title="Delete" data-section-action="delete" data-section-id="' + escapeHtml(section.id) + '"' + disabled + '><i class="bi bi-trash3"></i></button>',
+                '</div>',
+                '</header>',
+                '<div class="draft-section-body">',
+                renderSectionFields(section, disabled),
+                '</div>',
+                '</article>'
+            ].join('');
+        }
+
+        function renderField(label, input) {
+            return '<label class="draft-field"><span>' + escapeHtml(label) + '</span>' + input + '</label>';
+        }
+
+        function fieldAttr(section, field) {
+            return ' data-section-id="' + escapeHtml(section.id) + '" data-section-field="' + escapeHtml(field) + '"';
+        }
+
+        function renderSectionFields(section, disabled) {
+            if (section.type === 'heading') {
+                return [
+                    renderField('Clause heading', '<input type="text" value="' + escapeHtml(section.heading || '') + '"' + fieldAttr(section, 'heading') + disabled + '>'),
+                    renderField('Optional note', '<input type="text" value="' + escapeHtml(section.note || '') + '"' + fieldAttr(section, 'note') + disabled + '>')
+                ].join('');
+            }
+
+            if (section.type === 'paragraph') {
+                const editor = window.Quill
+                    ? '<div class="quill-section" data-quill-id="' + escapeHtml(section.id) + '"></div>'
+                    : '<textarea rows="8"' + fieldAttr(section, 'content') + disabled + '>' + escapeHtml(section.content || '') + '</textarea>';
+                return [
+                    renderField('Paragraph label', '<input type="text" value="' + escapeHtml(section.label || '') + '"' + fieldAttr(section, 'label') + disabled + '>'),
+                    editor
+                ].join('');
+            }
+
+            if (section.type === 'text') {
+                return [
+                    renderField('Text clause title', '<input type="text" value="' + escapeHtml(section.label || '') + '"' + fieldAttr(section, 'label') + disabled + '>'),
+                    renderField('Clause text', '<textarea rows="6"' + fieldAttr(section, 'content') + disabled + '>' + escapeHtml(section.content || '') + '</textarea>')
+                ].join('');
+            }
+
+            if (section.type === 'list') {
+                const options = [
+                    ['bullet', 'Bullet list'],
+                    ['numbered', 'Numbered list'],
+                    ['checklist', 'Checklist']
+                ].map(([value, label]) => '<option value="' + value + '"' + (section.listStyle === value ? ' selected' : '') + '>' + label + '</option>').join('');
+                const items = (section.items || []).map((item, itemIndex) => {
+                    const marker = section.listStyle === 'numbered' ? String(itemIndex + 1) : section.listStyle === 'checklist'
+                        ? '<input type="checkbox" data-list-checked="1" data-section-id="' + escapeHtml(section.id) + '" data-item-id="' + escapeHtml(item.id) + '"' + (item.checked ? ' checked' : '') + disabled + '>'
+                        : '&bull;';
+                    return [
+                        '<div class="draft-list-row">',
+                        '<span>' + marker + '</span>',
+                        '<input type="text" value="' + escapeHtml(item.text || '') + '" data-list-field="text" data-section-id="' + escapeHtml(section.id) + '" data-item-id="' + escapeHtml(item.id) + '"' + disabled + '>',
+                        '<button type="button" title="Remove item" data-list-action="remove" data-section-id="' + escapeHtml(section.id) + '" data-item-id="' + escapeHtml(item.id) + '"' + disabled + '><i class="bi bi-x-lg"></i></button>',
+                        '</div>'
+                    ].join('');
+                }).join('');
+                return [
+                    '<div class="draft-two-col">',
+                    renderField('List heading', '<input type="text" value="' + escapeHtml(section.label || '') + '"' + fieldAttr(section, 'label') + disabled + '>'),
+                    renderField('List type', '<select' + fieldAttr(section, 'listStyle') + disabled + '>' + options + '</select>'),
+                    '</div>',
+                    '<div class="draft-list-items">' + items + '</div>',
+                    '<button type="button" class="draft-add-item" data-list-action="add" data-section-id="' + escapeHtml(section.id) + '"' + disabled + '><i class="bi bi-plus-circle"></i> Add List Item</button>'
+                ].join('');
+            }
+
+            if (section.type === 'checkbox') {
+                return [
+                    renderField('Acceptance statement', '<input type="text" value="' + escapeHtml(section.label || '') + '"' + fieldAttr(section, 'label') + disabled + '>'),
+                    '<label class="draft-check-row"><input type="checkbox"' + fieldAttr(section, 'checked') + (section.checked ? ' checked' : '') + disabled + '><span>' + escapeHtml(section.label || 'Acceptance checkbox') + '</span></label>'
+                ].join('');
+            }
+
+            if (section.type === 'date') {
+                return [
+                    '<div class="draft-two-col">',
+                    renderField('Date label', '<input type="text" value="' + escapeHtml(section.label || '') + '"' + fieldAttr(section, 'label') + disabled + '>'),
+                    renderField('Date value', '<input type="date" value="' + escapeHtml(section.value || '') + '"' + fieldAttr(section, 'value') + disabled + '>'),
+                    '</div>'
+                ].join('');
+            }
+
+            if (section.type === 'signature') {
+                return [
+                    '<div class="draft-two-col">',
+                    renderField('Left signer', '<input type="text" value="' + escapeHtml(section.leftSigner || '') + '"' + fieldAttr(section, 'leftSigner') + disabled + '>'),
+                    renderField('Right signer', '<input type="text" value="' + escapeHtml(section.rightSigner || '') + '"' + fieldAttr(section, 'rightSigner') + disabled + '>'),
+                    '</div>',
+                    renderField('Signing note', '<input type="text" value="' + escapeHtml(section.note || '') + '"' + fieldAttr(section, 'note') + disabled + '>')
+                ].join('');
+            }
+
+            return '';
+        }
+
+        function render() {
+            collectQuillContent();
+            quills.clear();
+            const disabled = readOnly ? ' disabled' : '';
+            const options = sectionTypes.map((option) => '<option value="' + option.type + '"' + (selectedType === option.type ? ' selected' : '') + '>' + escapeHtml(option.label) + '</option>').join('');
+            const quickButtons = sectionTypes.map((option) => [
+                '<button type="button" data-quick-add="' + option.type + '"' + disabled + '>',
+                '<i class="bi ' + escapeHtml(option.icon) + '"></i><span>' + escapeHtml(option.shortLabel) + '</span>',
+                '</button>'
+            ].join('')).join('');
+
+            root.classList.toggle('is-readonly', readOnly);
+            root.innerHTML = [
+                '<div class="draft-created-panel">',
+                '<div class="draft-created-head">',
+                '<p>Created draft parts</p>',
+                '<h2>Contract body sections</h2>',
+                '<span>Edit the contract body here. The add controls stay below the created content so each new part is placed after the current draft.</span>',
+                '</div>',
+                '<div class="draft-sections">',
+                sections.length ? sections.map(renderSection).join('') : emptyState(disabled),
+                '</div>',
+                '<div class="draft-add-panel">',
+                '<div><p>Document builder</p><h2>Add the next draft section</h2><span>Choose the next block needed for this contract draft.</span></div>',
+                '<div class="draft-add-controls">',
+                '<select data-section-type-select="1"' + disabled + '>' + options + '</select>',
+                '<button type="button" data-add-selected="1"' + disabled + '><i class="bi bi-plus-lg"></i> Add Section</button>',
+                '</div>',
+                '<div class="draft-quick-grid">' + quickButtons + '</div>',
+                '</div>',
+                '</div>'
+            ].join('');
+
+            mountQuills();
+            sync();
+        }
+
+        function emptyState(disabled) {
+            return [
+                '<div class="draft-empty-state">',
+                '<span><i class="bi bi-file-earmark-richtext"></i></span>',
+                '<strong>Your draft body is empty</strong>',
+                '<p>Add a rich paragraph, clause heading, list, checkbox, date line, or signature block to start shaping the contract.</p>',
+                '<button type="button" data-quick-add="paragraph"' + disabled + '><i class="bi bi-pencil-square"></i> Add Rich Paragraph</button>',
+                '</div>'
+            ].join('');
+        }
+
+        function mountQuills() {
+            if (!window.Quill) return;
+            sections.forEach((section) => {
+                if (section.type !== 'paragraph') return;
+                const node = root.querySelector('[data-quill-id="' + section.id + '"]');
+                if (!node) return;
+                const quill = new window.Quill(node, {
+                    theme: 'snow',
+                    placeholder: 'Write the contract paragraph here...',
+                    modules: {
+                        toolbar: [
+                            [{ header: [false, 2, 3] }],
+                            ['bold', 'italic', 'underline'],
+                            ['link'],
+                            [{ list: 'ordered' }, { list: 'bullet' }],
+                            ['clean']
+                        ]
+                    }
+                });
+                quill.clipboard.dangerouslyPasteHTML(section.content || '<p><br></p>');
+                quill.enable(!readOnly);
+                quill.on('text-change', () => {
+                    section.content = quill.root.innerHTML;
+                    sync();
+                });
+                quills.set(section.id, quill);
+            });
+        }
+
+        function addSection(type) {
+            const section = makeSection(type || selectedType);
+            sections.push(section);
+            render();
+            setTimeout(() => root.querySelector('[data-section-scroll="' + section.id + '"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+        }
+
+        function sync() {
+            textarea.value = compile();
+        }
+
+        function compile() {
+            collectQuillContent();
+            return sections.map((section, index) => sectionHtml(section, index)).filter(Boolean).join('\n');
+        }
+
+        function cleanRichHtml(value) {
+            const template = document.createElement('template');
+            template.innerHTML = value || '';
+            template.content.querySelectorAll('script, style, iframe, object, embed').forEach((node) => node.remove());
+            template.content.querySelectorAll('*').forEach((node) => {
+                Array.from(node.attributes).forEach((attribute) => {
+                    const name = attribute.name.toLowerCase();
+                    const val = attribute.value.trim().toLowerCase();
+                    if (name.startsWith('on') || (name === 'href' && val.startsWith('javascript:'))) {
+                        node.removeAttribute(attribute.name);
+                    }
+                });
+            });
+            return template.innerHTML;
+        }
+
+        function richHtmlToParagraphs(value) {
+            const template = document.createElement('template');
+            template.innerHTML = cleanRichHtml(value || '');
+            const output = [];
+
+            function addParagraph(html) {
+                const content = String(html || '').trim();
+                if (content) output.push('<p>' + content + '</p>');
+            }
+
+            function walk(node, orderedIndex) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const text = node.textContent.replace(/\s+/g, ' ').trim();
+                    if (text) addParagraph(escapeHtml(text));
+                    return orderedIndex;
+                }
+
+                if (node.nodeType !== Node.ELEMENT_NODE) return orderedIndex;
+
+                const tag = node.tagName.toLowerCase();
+                if (/^h[1-6]$/.test(tag)) {
+                    addParagraph('<strong>' + escapeHtml(node.textContent.trim()) + '</strong>');
+                    return orderedIndex;
+                }
+                if (tag === 'p') {
+                    addParagraph(node.innerHTML || '<br>');
+                    return orderedIndex;
+                }
+                if (tag === 'li') {
+                    const prefix = orderedIndex ? 'No. ' + orderedIndex + ': ' : '- ';
+                    addParagraph(escapeHtml(prefix + node.textContent.trim()));
+                    return orderedIndex ? orderedIndex + 1 : orderedIndex;
+                }
+                if (tag === 'ol') {
+                    Array.from(node.children).forEach((child, childIndex) => walk(child, childIndex + 1));
+                    return orderedIndex;
+                }
+                if (tag === 'ul') {
+                    Array.from(node.children).forEach((child) => walk(child, 0));
+                    return orderedIndex;
+                }
+                if (node.children.length) {
+                    Array.from(node.childNodes).forEach((child) => walk(child, orderedIndex));
+                    return orderedIndex;
+                }
+
+                addParagraph(escapeHtml(node.textContent.trim()));
+                return orderedIndex;
+            }
+
+            Array.from(template.content.childNodes).forEach((node) => walk(node, 0));
+            return output.join('') || '<p><br></p>';
+        }
+
+        function sectionNumber(index, value) {
+            const text = String(value || '').trim();
+            return (index + 1) + '. ' + (text || 'Contract section');
+        }
+
+        function sectionHtml(section, index) {
+            const label = escapeHtml(section.label || '');
+            if (section.type === 'heading') {
+                return '<div data-draft-section="heading"><p><strong>' + escapeHtml(sectionNumber(index, section.heading || 'Clause Heading')) + '</strong></p>' + (section.note ? '<p data-section-note>' + escapeHtml(section.note) + '</p>' : '') + '</div>';
+            }
+            if (section.type === 'paragraph') {
+                return '<div data-draft-section="paragraph" data-label="' + label + '"><p><strong>' + escapeHtml(sectionNumber(index, section.label || 'Paragraph')) + '</strong></p><div data-section-content>' + richHtmlToParagraphs(section.content || '') + '</div></div>';
+            }
+            if (section.type === 'text') {
+                const lines = String(section.content || '').split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line) => '<p>' + escapeHtml(line) + '</p>').join('');
+                return '<div data-draft-section="text" data-label="' + label + '"><p><strong>' + escapeHtml(sectionNumber(index, section.label || 'Text clause')) + '</strong></p><div data-section-content>' + (lines || '<p><br></p>') + '</div></div>';
+            }
+            if (section.type === 'list') {
+                const style = section.listStyle || 'bullet';
+                const items = (section.items || []).map((item, itemIndex) => {
+                    const text = item.text || 'List item';
+                    const prefix = style === 'numbered' ? 'No. ' + (itemIndex + 1) + ': ' : style === 'checklist' ? '[' + (item.checked ? 'x' : ' ') + '] ' : '- ';
+                    return '<p data-list-item data-text="' + escapeHtml(text) + '" data-checked="' + (item.checked ? '1' : '0') + '">' + escapeHtml(prefix + text) + '</p>';
+                }).join('');
+                return '<div data-draft-section="list" data-label="' + label + '" data-list-style="' + escapeHtml(style) + '"><p><strong>' + escapeHtml(sectionNumber(index, section.label || 'List')) + '</strong></p>' + items + '</div>';
+            }
+            if (section.type === 'checkbox') {
+                return '<div data-draft-section="checkbox" data-label="' + label + '" data-checked="' + (section.checked ? '1' : '0') + '"><p><strong>' + escapeHtml(sectionNumber(index, 'Acceptance')) + '</strong></p><p>[' + (section.checked ? 'x' : ' ') + '] ' + escapeHtml(section.label || 'Acceptance checkbox') + '</p></div>';
+            }
+            if (section.type === 'date') {
+                return '<div data-draft-section="date" data-label="' + label + '" data-value="' + escapeHtml(section.value || '') + '"><p><strong>' + escapeHtml(sectionNumber(index, section.label || 'Date')) + ':</strong> ' + escapeHtml(section.value || '________________') + '</p></div>';
+            }
+            if (section.type === 'signature') {
+                return '<div data-draft-section="signature" data-left-signer="' + escapeHtml(section.leftSigner || '') + '" data-right-signer="' + escapeHtml(section.rightSigner || '') + '"><p><strong>' + escapeHtml(sectionNumber(index, 'Signature block')) + '</strong></p>' + (section.note ? '<p data-section-note>' + escapeHtml(section.note) + '</p>' : '') + '<p>' + escapeHtml(section.leftSigner || 'Client Representative') + ': ____________________________</p><p>' + escapeHtml(section.rightSigner || 'ITEC Representative') + ': ____________________________</p></div>';
+            }
+            return '';
+        }
+
+        root.addEventListener('click', (event) => {
+            if (readOnly) return;
+            const quick = event.target.closest('[data-quick-add]');
+            if (quick) return addSection(quick.dataset.quickAdd);
+            if (event.target.closest('[data-add-selected]')) return addSection(selectedType);
+
+            const action = event.target.closest('[data-section-action]');
+            if (action) {
+                collectQuillContent();
+                const index = sections.findIndex((section) => section.id === action.dataset.sectionId);
+                if (index < 0) return;
+                if (action.dataset.sectionAction === 'up' && index > 0) {
+                    sections.splice(index - 1, 0, sections.splice(index, 1)[0]);
+                } else if (action.dataset.sectionAction === 'down' && index < sections.length - 1) {
+                    sections.splice(index + 1, 0, sections.splice(index, 1)[0]);
+                } else if (action.dataset.sectionAction === 'duplicate') {
+                    const copy = JSON.parse(JSON.stringify(sections[index]));
+                    copy.id = id('section');
+                    if (Array.isArray(copy.items)) copy.items = copy.items.map((item) => ({ ...item, id: id('item') }));
+                    sections.splice(index + 1, 0, copy);
+                } else if (action.dataset.sectionAction === 'delete') {
+                    sections.splice(index, 1);
+                }
+                render();
+            }
+
+            const listAction = event.target.closest('[data-list-action]');
+            if (listAction) {
+                const section = sectionById(listAction.dataset.sectionId);
+                if (!section) return;
+                if (listAction.dataset.listAction === 'add') {
+                    section.items.push({ id: id('item'), text: '', checked: false });
+                } else {
+                    section.items = section.items.filter((item) => item.id !== listAction.dataset.itemId);
+                    if (!section.items.length) section.items.push({ id: id('item'), text: '', checked: false });
+                }
+                render();
+            }
+        });
+
+        root.addEventListener('input', (event) => {
+            if (readOnly) return;
+            const field = event.target.closest('[data-section-field]');
+            if (field) {
+                const section = sectionById(field.dataset.sectionId);
+                if (section) {
+                    section[field.dataset.sectionField] = field.type === 'checkbox' ? field.checked : field.value;
+                    sync();
+                }
+            }
+
+            const listField = event.target.closest('[data-list-field]');
+            if (listField) {
+                const section = sectionById(listField.dataset.sectionId);
+                const item = section ? itemById(section, listField.dataset.itemId) : null;
+                if (item) {
+                    item.text = listField.value;
+                    sync();
+                }
+            }
+        });
+
+        root.addEventListener('change', (event) => {
+            if (event.target.matches('[data-section-type-select]')) {
+                selectedType = event.target.value;
+                return;
+            }
+            if (readOnly) return;
+            const field = event.target.closest('[data-section-field]');
+            if (field) {
+                const section = sectionById(field.dataset.sectionId);
+                if (section) {
+                    section[field.dataset.sectionField] = field.type === 'checkbox' ? field.checked : field.value;
+                    if (field.dataset.sectionField === 'listStyle') render();
+                    sync();
+                }
+            }
+            const checked = event.target.closest('[data-list-checked]');
+            if (checked) {
+                const section = sectionById(checked.dataset.sectionId);
+                const item = section ? itemById(section, checked.dataset.itemId) : null;
+                if (item) {
+                    item.checked = checked.checked;
+                    sync();
+                }
+            }
+        });
+
+        render();
+
+        return {
+            getContent: compile,
+            setReadOnly(value) {
+                readOnly = Boolean(value);
+                quills.forEach((quill) => quill.enable(!readOnly));
+                render();
+            }
+        };
+    }
 
     // Poll-driven lock and distribution state keeps the frontend aligned with signing progress.
     function isDraftState(state) {
@@ -178,18 +1001,28 @@
 
         if (!items.length) {
             versionsList.innerHTML = '<p class="muted">No saves yet.</p>';
+            if (versionPreview) {
+                versionPreview.innerHTML = '<p class="muted">Save the contract to create a generated document preview.</p>';
+            }
             return;
         }
+
+        if (!selectedVersionNo) selectedVersionNo = items[0].version_no;
 
         versionsList.innerHTML = items.map((item) => {
             const author = item.saved_by_name || (item.saved_by ? 'User #' + item.saved_by : 'Unknown user');
             const downloadUrl = versionUrl(config.downloadUrlTemplate, item.version_no);
+            const selected = String(item.version_no) === String(selectedVersionNo) ? ' selected' : '';
 
             return [
-                '<article class="version-item">',
-                '<strong>Version ' + escapeHtml(item.version_no) + '</strong>',
-                '<small>' + escapeHtml(formatSavedAt(item.saved_at)) + '<br>' + escapeHtml(author) + '</small>',
+                '<article class="version-item' + selected + '" data-version-card="' + escapeHtml(item.version_no) + '">',
+                '<div class="version-card-head">',
+                '<span class="version-badge">V' + escapeHtml(item.version_no) + '</span>',
+                '<div><strong>Version ' + escapeHtml(item.version_no) + '</strong>',
+                '<small>' + escapeHtml(formatSavedAt(item.saved_at)) + ' by ' + escapeHtml(author) + '</small></div>',
+                '</div>',
                 '<div class="version-actions">',
+                '<button class="preview-version" type="button" data-preview-version="' + escapeHtml(item.version_no) + '">Preview</button>',
                 '<button type="button" data-restore-version="' + escapeHtml(item.version_no) + '">Restore</button>',
                 '<a href="' + escapeHtml(downloadUrl) + '">DOCX</a>',
                 '</div>',
@@ -198,6 +1031,91 @@
         }).join('');
 
         renderRestoreLocks();
+        loadVersionPreview(selectedVersionNo);
+    }
+
+    function renderVersionPreviewLoading(versionNo) {
+        if (!versionPreview) return;
+        versionPreview.innerHTML = [
+            '<div class="version-preview-loading">',
+            '<span class="spinner"></span>',
+            '<strong>Loading version ' + escapeHtml(versionNo) + ' preview...</strong>',
+            '</div>'
+        ].join('');
+    }
+
+    function renderVersionPreviewError(messageText) {
+        if (!versionPreview) return;
+        versionPreview.innerHTML = [
+            '<div class="version-preview-error">',
+            '<strong>Preview unavailable</strong>',
+            '<span>' + escapeHtml(messageText || 'The saved DOCX could not be previewed.') + '</span>',
+            '</div>'
+        ].join('');
+    }
+
+    function renderVersionPreview(documentData, versionData) {
+        if (!versionPreview) return;
+        const doc = documentData || {};
+        const version = versionData || {};
+        const body = Array.isArray(doc.body) ? doc.body : [];
+        const bodyHtml = body.map((block) => {
+            const text = escapeHtml(block.text || '');
+            if ((block.type || '') === 'heading') return '<h4>' + text + '</h4>';
+            if ((block.type || '') === 'list') return '<p class="version-list-line">' + text + '</p>';
+            if ((block.type || '') === 'muted') return '<p class="version-muted-line">' + text + '</p>';
+            return '<p>' + text + '</p>';
+        }).join('');
+
+        versionPreview.innerHTML = [
+            '<article class="generated-version-page" aria-label="Read-only generated contract preview">',
+            '<header class="generated-version-header">',
+            doc.logo_url ? '<img src="' + escapeHtml(doc.logo_url) + '" alt="ITEC logo">' : '<strong>' + escapeHtml(doc.company_name || 'ITEC Solutions') + '</strong>',
+            '<span>' + escapeHtml(doc.tagline || 'BE SMART, CHOOSE SMART') + '</span>',
+            '</header>',
+            '<div class="generated-version-rule"></div>',
+            '<h3>' + escapeHtml(doc.title || 'Contract') + '</h3>',
+            '<dl class="generated-version-meta">',
+            '<div><dt>Contract Ref</dt><dd>' + escapeHtml(doc.contract_ref || '') + '</dd></div>',
+            '<div><dt>Client</dt><dd>' + escapeHtml(doc.client_name || '') + '</dd></div>',
+            '<div><dt>Date</dt><dd>' + escapeHtml(doc.document_date || '') + '</dd></div>',
+            '<div><dt>Email</dt><dd>' + escapeHtml(doc.client_email || '') + '</dd></div>',
+            '</dl>',
+            '<section class="generated-version-body">',
+            '<h4>Agreement Details</h4>',
+            bodyHtml,
+            '</section>',
+            '<section class="generated-version-signatures">',
+            '<h4>Signatures</h4>',
+            '<div class="signature-lines">',
+            '<div><span></span><strong>Client Signature</strong><small>' + escapeHtml(doc.signature?.client_name || doc.client_name || 'Client Representative') + '</small><small>Date: _______________</small></div>',
+            '<div><span></span><strong>' + escapeHtml(doc.signature?.company_name || 'ITEC Solutions') + '</strong><small>' + escapeHtml(doc.signature?.company_signer || 'Authorized Signatory') + '</small><small>Date: _______________</small></div>',
+            '</div>',
+            '</section>',
+            '<footer class="generated-version-footer">',
+            '<strong>Read-only generated preview</strong>',
+            '<span>Version ' + escapeHtml(version.version_no || selectedVersionNo || '') + ' saved ' + escapeHtml(formatSavedAt(version.saved_at)) + '</span>',
+            '</footer>',
+            '</article>'
+        ].join('');
+    }
+
+    async function loadVersionPreview(versionNo) {
+        if (!versionNo || !versionPreview || !versionPreviewUrl(versionNo)) return;
+        selectedVersionNo = versionNo;
+        versionsList?.querySelectorAll('[data-version-card]').forEach((card) => {
+            card.classList.toggle('selected', String(card.dataset.versionCard) === String(versionNo));
+        });
+        renderVersionPreviewLoading(versionNo);
+
+        try {
+            const response = await fetch(versionPreviewUrl(versionNo), { headers: { Accept: 'application/json' } });
+            const result = await responseJson(response);
+            if (!response.ok || result.success === false) throw new Error(result.message || 'Could not load version preview');
+            renderVersionPreview(result.document, result.version);
+        } catch (error) {
+            renderVersionPreviewError(error.message || 'Could not load version preview.');
+        }
     }
 
     function renderRestoreLocks() {
@@ -235,10 +1153,9 @@
 
         const canSign = currentState === 'AWAITING_CLIENT';
         const canSeal = currentState === 'AWAITING_COMPANY';
-        const canSubmit = currentState === 'DRAFT';
 
-        if (submitForSigning) submitForSigning.disabled = !canSubmit;
-        if (openSigningChoice) openSigningChoice.disabled = !(canSubmit || canSign);
+        renderSendClientState();
+        if (openSigningChoice) openSigningChoice.disabled = !canSign;
         if (companySigningAction) {
             companySigningAction.classList.toggle('disabled', !canSeal);
             companySigningAction.setAttribute('aria-disabled', canSeal ? 'false' : 'true');
@@ -412,7 +1329,7 @@
             if (!response.ok || !result.success) throw new Error(result.message || 'Save failed');
 
             if (config.isNew && result.contract_id && config.editUrlTemplate) {
-                window.location.href = config.editUrlTemplate.replace('__ID__', encodeURIComponent(result.contract_id));
+                window.location.href = config.editUrlTemplate.replace('__ID__', encodeURIComponent(result.contract_id)) + '#signing';
                 return;
             }
 
@@ -562,19 +1479,60 @@
         }
     }
 
+    async function saveDraftBeforeSigning() {
+        if (!isDraftState(currentState) || config.isNew || !config.saveUrl) return;
+
+        setSubmitSigningLoading(true, 'Saving latest draft...');
+
+        const body = new FormData();
+        body.append('content', getEditorData());
+
+        const response = await fetch(config.saveUrl, {
+            method: 'POST',
+            body,
+            headers: { Accept: 'application/json' }
+        });
+        const result = await responseJson(response);
+
+        if (!response.ok || result.success === false) {
+            throw new Error(result.message || result.error || 'Could not save the latest draft before sending.');
+        }
+
+        await loadVersions();
+    }
+
     async function submitDraftForSigning() {
         if (!config.submitUrl || !isDraftState(currentState)) return;
-        const emails = (clientEmails?.value || '').trim();
-        if (!emails) {
+        const parsed = parseRecipientInput(clientEmails?.value || '');
+        const emails = parsed.valid.join(', ');
+
+        if (!parsed.valid.length) {
             setMessage('Add at least one client recipient email before sending.', 'error');
+            renderSendClientState();
             clientEmails?.focus();
             activatePanel('signing');
             return;
         }
 
-        setMessage('Submitting draft for client signing...', '');
+        if (parsed.invalid.length) {
+            const detail = 'Fix invalid email: ' + parsed.invalid.join(', ');
+            setMessage(detail, 'error');
+            showSendResult('error', 'Recipient email needs attention', detail);
+            renderSendClientState();
+            clientEmails?.focus();
+            activatePanel('signing');
+            return;
+        }
+
+        clearSendResult();
+        setSubmitSigningLoading(true, 'Preparing email...');
+        setMessage('Saving latest draft before emailing the client...', '');
 
         try {
+            await saveDraftBeforeSigning();
+            setSubmitSigningLoading(true, 'Sending email...');
+            setMessage('Emailing the secure signing link to the client...', '');
+
             const response = await fetch(config.submitUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -582,12 +1540,18 @@
             });
             const result = await responseJson(response);
             if (!response.ok || result.success === false) throw new Error(result.message || result.error || 'Could not submit contract');
+            submittedRecipients = Array.isArray(result.recipients) && result.recipients.length ? result.recipients : parsed.valid;
             applySigningState(result.new_state || 'AWAITING_CLIENT');
-            const count = Array.isArray(result.recipients) ? result.recipients.length : 1;
-            setMessage((result.message || 'Contract submitted for client signing.') + ' Sent to ' + count + ' recipient' + (count === 1 ? '.' : 's.'), 'success');
+            const count = submittedRecipients.length || 1;
+            showSendResult('success', 'Email sent', 'The secure signing link was emailed to ' + count + ' recipient' + (count === 1 ? '.' : 's.') + ' The contract is now locked for signing.');
+            setMessage((result.message || 'Contract submitted for client signing.') + ' Email sent to ' + count + ' recipient' + (count === 1 ? '.' : 's.'), 'success');
             activatePanel('signing');
         } catch (error) {
-            setMessage(error.message || 'Could not submit contract for signing.', 'error');
+            const detail = error.message || 'Could not submit contract for signing.';
+            showSendResult('error', 'Could not send email', detail);
+            setMessage(detail, 'error');
+        } finally {
+            setSubmitSigningLoading(false);
         }
     }
 
@@ -619,120 +1583,24 @@
     }
 
     function startEditor() {
-        if (!window.tinymce) {
-            setMessage('TinyMCE could not load; basic editing is active.', 'error');
+        if (!draftBuilderRoot) {
+            setMessage('Draft builder could not start; basic editing is active.', 'error');
             applySigningState(currentState);
             return;
         }
 
-        window.tinymce.init({
-            selector: '#documentEditor',
-            base_url: config.tinyMceBaseUrl,
-            suffix: '.min',
-            license_key: 'gpl',
-            height: Math.max(760, window.innerHeight - 265),
-            min_height: 620,
-            menubar: 'file edit view insert format tools table help',
-            menu: {
-                file: { title: 'File', items: 'restoredraft | save preview fullscreen' },
-                edit: { title: 'Edit', items: 'undo redo | cut copy paste pastetext | selectall | searchreplace' },
-                view: { title: 'View', items: 'visualaid visualchars visualblocks | preview fullscreen | code wordcount' },
-                insert: { title: 'Insert', items: 'image media link anchor codesample inserttable | charmap emoticons insertdatetime pagebreak nonbreaking hr' },
-                format: { title: 'Format', items: 'bold italic underline strikethrough superscript subscript | blocks fontfamily fontsize align lineheight | forecolor backcolor | removeformat' },
-                tools: { title: 'Tools', items: 'code wordcount' },
-                table: { title: 'Table', items: 'inserttable | cell row column | tableprops deletetable' },
-                help: { title: 'Help', items: 'help' }
-            },
-            plugins: 'accordion advlist anchor autolink autoresize autosave charmap code codesample directionality emoticons fullscreen help image importcss insertdatetime link lists media nonbreaking pagebreak preview quickbars save searchreplace table visualblocks visualchars wordcount',
-            toolbar: [
-                'save restoredraft | undo redo | blocks fontfamily fontsize lineheight | bold italic underline strikethrough subscript superscript | forecolor backcolor',
-                'alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | table link anchor image media | pagebreak hr nonbreaking charmap emoticons insertdatetime',
-                'ltr rtl | visualblocks visualchars searchreplace | removeformat fullscreen preview code wordcount'
-            ].join(' '),
-            toolbar_mode: 'wrap',
-            toolbar_sticky: true,
-            contextmenu: 'link image table',
-            quickbars_insert_toolbar: 'quickimage quicktable media codesample',
-            quickbars_selection_toolbar: 'bold italic underline | forecolor backcolor | quicklink h2 h3 blockquote',
-            block_formats: 'Normal=p; No Spacing=div; Title=h1; Subtitle=h2; Heading 1=h1; Heading 2=h2; Heading 3=h3; Quote=blockquote; Code=pre',
-            font_family_formats: 'Calibri=calibri,arial,sans-serif; Arial=arial,helvetica,sans-serif; Aptos=aptos,calibri,arial,sans-serif; Times New Roman=times new roman,times,serif; Georgia=georgia,serif; Courier New=courier new,courier,monospace; Verdana=verdana,geneva,sans-serif',
-            font_size_formats: '8pt 9pt 10pt 11pt 12pt 14pt 16pt 18pt 20pt 24pt 28pt 36pt 48pt',
-            line_height_formats: '1 1.15 1.5 2 2.5 3',
-            style_formats: [
-                { title: 'Title', block: 'h1' },
-                { title: 'Subtitle', block: 'h2' },
-                { title: 'Heading 1', block: 'h1' },
-                { title: 'Heading 2', block: 'h2' },
-                { title: 'Heading 3', block: 'h3' },
-                { title: 'Normal', block: 'p' },
-                { title: 'No Spacing', block: 'p', styles: { margin: '0' } },
-                { title: 'Quote', block: 'blockquote' },
-                { title: 'Contract Clause', block: 'p', classes: 'contract-clause' },
-                { title: 'Signature Block', block: 'div', classes: 'signature-block' }
-            ],
-            table_toolbar: 'tableprops tabledelete | tableinsertrowbefore tableinsertrowafter tabledeleterow | tableinsertcolbefore tableinsertcolafter tabledeletecol | tablecellprops tablemergecells tablesplitcells',
-            table_advtab: true,
-            table_cell_advtab: true,
-            table_row_advtab: true,
-            link_default_target: '_blank',
-            image_advtab: true,
-            image_title: true,
-            automatic_uploads: false,
-            autosave_ask_before_unload: true,
-            autosave_interval: '20s',
-            autosave_prefix: 'contract-' + (config.saveUrl || '').replace(/\W+/g, '-') + '-',
-            autosave_restore_when_empty: false,
-            autosave_retention: '30m',
-            save_onsavecallback: saveContract,
-            paste_data_images: true,
-            browser_spellcheck: true,
-            promotion: false,
-            branding: false,
-            statusbar: true,
-            resize: true,
-            content_style: [
-                'html { background: #eef2f7; }',
-                'body { max-width: 794px; min-height: 1123px; margin: 34px auto; padding: 72px; box-sizing: border-box; background: #fff; color: #111827; box-shadow: 0 2px 12px rgba(17,24,39,.18); font-family: Calibri, Arial, sans-serif; font-size: 12pt; line-height: 1.45; }',
-                'p { margin: 0 0 10pt; }',
-                '.contract-clause { margin: 0 0 10pt; padding-left: 18pt; text-indent: -18pt; }',
-                '.signature-block { min-height: 90px; margin-top: 24pt; padding-top: 12pt; border-top: 1px solid #111827; }',
-                'h1, h2, h3 { margin: 0 0 12pt; line-height: 1.2; }',
-                'table { width: 100%; border-collapse: collapse; }',
-                'td, th { border: 1px solid #9ca3af; padding: 6px 8px; }',
-                'blockquote { margin: 12pt 0; padding-left: 16px; border-left: 3px solid #9ca3af; color: #4b5563; }'
-            ].join(' '),
-            setup: function (editor) {
-                editor.on('init', function () {
-                    editorInstance = editor;
-                    applySigningState(currentState);
-                    setMessage('Word-style editor ready', 'success');
-                });
-            }
-        }).catch(() => {
-            setMessage('TinyMCE could not start; basic editing is active.', 'error');
-            applySigningState(currentState);
-        });
+        editorElement.classList.add('hidden');
+        draftBodyEditor = createDraftBodyEditor(editorElement, draftBuilderRoot);
+        applySigningState(currentState);
+        setMessage('Draft builder editor ready', 'success');
     }
 
     function resizeEditor() {
-        if (!editorInstance) return;
+        return;
+    }
 
-        const height = Math.max(760, window.innerHeight - 265);
-
-        if (editorInstance.theme && typeof editorInstance.theme.resizeTo === 'function') {
-            editorInstance.theme.resizeTo(null, height);
-            return;
-        }
-
-        const container = editorInstance.getContainer && editorInstance.getContainer();
-        if (container) {
-            container.style.height = height + 'px';
-        }
-
-        const iframe = editorInstance.iframeElement;
-        if (iframe) {
-            iframe.style.height = Math.max(520, height - 120) + 'px';
-        }
+    if (clientEmails && !clientEmails.value.trim() && config.clientEmail) {
+        clientEmails.value = config.clientEmail;
     }
 
     applySigningState(currentState);
@@ -772,6 +1640,10 @@
     });
     openSigningChoice?.addEventListener('click', () => setModalOpen(true));
     submitForSigning?.addEventListener('click', submitDraftForSigning);
+    clientEmails?.addEventListener('input', () => {
+        clearSendResult();
+        renderSendClientState();
+    });
     closeSigningModal?.addEventListener('click', () => setModalOpen(false));
     [signatureAction, sealAction, companySigningAction, finalPdfPreview].forEach((link) => {
         link?.addEventListener('click', (event) => {
@@ -791,6 +1663,12 @@
     signedCopyForm?.addEventListener('submit', uploadSignedCopy);
     distributionForm?.addEventListener('submit', distributeContract);
     versionsList?.addEventListener('click', (event) => {
+        const previewButton = event.target.closest('[data-preview-version]');
+        if (previewButton) {
+            loadVersionPreview(previewButton.dataset.previewVersion);
+            return;
+        }
+
         const button = event.target.closest('[data-restore-version]');
         if (button) restoreVersion(button.dataset.restoreVersion);
     });

@@ -9,25 +9,29 @@ $editor_config = array_merge([
     'readonly' => false,
     'show_side_panel' => true,
     'signatures' => [],
+    'client_name' => '',
+    'client_email' => '',
 ], $editor_config ?? []);
 
 $contractId = (int) $editor_config['contract_id'];
 $isNew = $contractId === 0;
 $state = strtoupper($editor_config['signing_state'] ?? 'DRAFT');
 $content = $editor_config['content'] ?? '';
+$clientName = trim((string) ($editor_config['client_name'] ?? ''));
+$clientEmail = trim((string) ($editor_config['client_email'] ?? ''));
 $base = BASE_URL;
 
 $jsConfig = [
     'contractId' => $contractId,
     'isNew' => $isNew,
     'signingState' => $state,
-    'tinyMceBaseUrl' => $base . '/public/vendor/tinymce',
     'createUrl' => $base . '/api/contracts',
     'saveUrl' => $isNew ? $base . '/api/contracts' : $base . '/contracts/' . $contractId . '/save',
     'editUrlTemplate' => $base . '/contracts/__ID__/editor',
     'statusUrl' => $isNew ? null : $base . '/contracts/' . $contractId . '/status',
     'versionsUrl' => $isNew ? null : $base . '/contracts/' . $contractId . '/versions',
     'restoreUrlTemplate' => $base . '/contracts/' . $contractId . '/versions/__VERSION__/restore',
+    'versionPreviewUrlTemplate' => $base . '/contracts/' . $contractId . '/versions/__VERSION__/preview',
     'downloadUrlTemplate' => $base . '/contracts/' . $contractId . '/versions/__VERSION__/download',
     'changesUrl' => $isNew ? null : $base . '/contracts/' . $contractId . '/changes',
     'acceptChangeUrlTemplate' => $base . '/contracts/' . $contractId . '/changes/__CHANGE__/accept',
@@ -42,6 +46,8 @@ $jsConfig = [
     'finalPdfUrl' => $isNew ? null : $base . '/contracts/final-pdf/' . $contractId,
     'distributeUrl' => $isNew ? null : $base . '/api/contracts/' . $contractId . '/distribute',
     'accessUrlTemplate' => $base . '/view/__TOKEN__',
+    'clientName' => $clientName,
+    'clientEmail' => $clientEmail,
 ];
 ?>
 
@@ -56,6 +62,40 @@ $jsConfig = [
     </div>
     <span id="statusBadge" class="badge <?= ui_status_class($state) ?>"><?= ui_e(ui_status_label($state)) ?></span>
 </section>
+
+<?php if (!$isNew && $editor_config['show_side_panel']): ?>
+    <div id="signingModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="signingModalTitle">
+        <div class="modal">
+            <div class="modal-header">
+                <div>
+                    <p>Client signing</p>
+                    <h2 id="signingModalTitle">Choose signing method</h2>
+                </div>
+                <button id="closeSigningModal" class="icon-button" type="button" aria-label="Close signing options">
+                    <?= ui_icon('x-lg') ?>
+                </button>
+            </div>
+            <div class="choice-grid">
+                <article class="choice-card">
+                    <span class="choice-icon"><?= ui_icon('pen') ?></span>
+                    <strong>Digital signature</strong>
+                    <small>Open the secure digital signing page for the active client invitation.</small>
+                    <button type="button" data-signing-choice="digital"><?= ui_icon('box-arrow-up-right') ?> Open digital signing</button>
+                </article>
+                <article class="choice-card">
+                    <span class="choice-icon"><?= ui_icon('printer') ?></span>
+                    <strong>Hard-copy packet</strong>
+                    <small>Generate the printable PDF packet when the client signs outside the portal.</small>
+                    <button type="button" data-signing-choice="hard_copy"><?= ui_icon('file-earmark-pdf') ?> Generate packet</button>
+                </article>
+            </div>
+            <div class="modal-actions">
+                <span id="signingMessage">Choose a method to continue the client signing workflow.</span>
+                <a href="<?= ui_e($jsConfig['printPdfUrl'] ?? '#') ?>"><?= ui_icon('eye') ?> Preview PDF</a>
+            </div>
+        </div>
+    </div>
+<?php endif; ?>
 
 <div id="readOnlyBanner" class="warning <?= $state === 'DRAFT' ? 'hidden' : '' ?>">
     <?= ui_icon('lock-fill') ?> Body editing is locked because this contract has entered execution.
@@ -118,7 +158,8 @@ $jsConfig = [
                 <span class="spinner hidden"></span><span class="buttonText"><?= $isNew ? 'Create Contract' : 'Save Contract' ?></span>
             </button>
         </div>
-        <textarea id="documentEditor" class="document-editor" <?= $state !== 'DRAFT' ? 'readonly' : '' ?>><?= ui_e($content) ?></textarea>
+        <textarea id="documentEditor" class="document-editor raw-document-editor" <?= $state !== 'DRAFT' ? 'readonly' : '' ?>><?= ui_e($content) ?></textarea>
+        <div id="draftBuilderRoot" class="draft-builder-editor" aria-label="Contract draft body editor"></div>
         
         <!-- SIGNATURE BLOCK - Display all signatures -->
         <?php if (!empty($editor_config['signatures'])): ?>
@@ -160,7 +201,12 @@ $jsConfig = [
 
             <section class="panel-section active" data-panel-section="versions">
                 <div class="panel-header"><h2>Version history</h2><small id="versionCount">0 saved</small></div>
-                <div id="versionsList" class="panel-list"><p class="muted">Save the contract to create versions.</p></div>
+                <div class="versions-workspace">
+                    <div id="versionPreview" class="version-preview-shell">
+                        <p class="muted">Select a version to preview the generated read-only document.</p>
+                    </div>
+                    <div id="versionsList" class="version-list"><p class="muted">Save the contract to create versions.</p></div>
+                </div>
             </section>
 
             <section class="panel-section" data-panel-section="changes">
@@ -171,99 +217,114 @@ $jsConfig = [
             </section>
 
             <section class="panel-section" data-panel-section="signing">
-    <div class="panel-header">
-        <h2>Signing workflow</h2>
-        <small id="phaseInstruction">
-            <?php if ($state === 'AWAITING_COMPANY'): ?>
-                Contract is ready for company signature and seal
-            <?php elseif ($state === 'CLIENT_SIGNED'): ?>
-                Client has signed. Ready for company action.
-            <?php elseif ($state === 'AWAITING_CLIENT'): ?>
-                Waiting for client signature
-            <?php elseif ($state === 'FULLY_SIGNED'): ?>
-                Contract fully executed
-            <?php else: ?>
-                Send the approved draft to the client when review is complete.
-            <?php endif; ?>
-        </small>
-    </div>
+                <div class="panel-header">
+                    <h2>Send to client</h2>
+                    <small id="phaseInstruction">
+                        <?php if ($state === 'AWAITING_COMPANY'): ?>
+                            Contract is ready for company signature and seal
+                        <?php elseif ($state === 'CLIENT_SIGNED'): ?>
+                            Client has signed. Ready for company action.
+                        <?php elseif ($state === 'AWAITING_CLIENT'): ?>
+                            Waiting for client signature
+                        <?php elseif ($state === 'FULLY_SIGNED'): ?>
+                            Contract fully executed
+                        <?php else: ?>
+                            Send the approved draft to the client when review is complete.
+                        <?php endif; ?>
+                    </small>
+                </div>
 
-    <div class="signing-summary">
-        <div class="lock-status">
-            <span id="lockPill" class="lock-pill <?= $state === 'DRAFT' ? 'draft' : 'locked' ?>">
-                <?= $state === 'DRAFT' ? 'Draft editable' : 'Body locked' ?>
-            </span>
-            <small id="lockStatusText">
-                <?= $state === 'DRAFT' ? 'Body editing is open until signing starts.' : 'Document body is frozen. Only signature and seal actions remain.' ?>
-            </small>
-        </div>
+                <div class="signing-summary">
+                    <div class="lock-status">
+                        <span id="lockPill" class="lock-pill <?= $state === 'DRAFT' ? 'draft' : 'locked' ?>">
+                            <?= $state === 'DRAFT' ? 'Draft editable' : 'Body locked' ?>
+                        </span>
+                        <small id="lockStatusText">
+                            <?= $state === 'DRAFT' ? 'Body editing is open until signing starts.' : 'Document body is frozen. Only signature and seal actions remain.' ?>
+                        </small>
+                    </div>
 
-        <div >
-            <!-- Submit for Signing (only in DRAFT) -->
-            <?php if ($state === 'DRAFT'): ?>
-                <button id="submitForSigning" class="primary-action" type="button" <?= $isNew ? 'disabled' : '' ?>>
-                    Submit for signing
-                </button>
-            <?php endif; ?>
+                    <?php if (in_array($state, ['DRAFT', 'AWAITING_CLIENT'], true)): ?>
+                        <div class="send-client-panel rounded-lg border border-slate-200 bg-white shadow-sm" data-send-client-panel>
+                            <div class="send-client-head">
+                                <span class="send-client-icon"><?= ui_icon('send-check') ?></span>
+                                <div>
+                                    <h3 id="sendClientTitle">Client invitation</h3>
+                                    <small id="sendClientSubtitle">Email the secure signing link to the client.</small>
+                                </div>
+                                <span id="sendClientStatus" class="send-status-pill">Ready</span>
+                            </div>
 
-            <!-- Apply Company Seal (only in AWAITING_COMPANY) -->
-              <!-- Apply Company Seal (only in AWAITING_COMPANY) -->
-            <?php if ($state === 'AWAITING_COMPANY'): ?>
-                 <form method="POST" action="<?= BASE_URL ?>/contracts/<?= $contractId ?>/company-seal">
-                    <button type="submit" class="btn btn-primary">
-                        Apply Company Seal
-                    </button>
-                </form>
-            <?php endif; ?>
+                            <label class="recipient-field" for="clientEmails">
+                                <span>Client recipient emails</span>
+                                <textarea id="clientEmails" rows="3" placeholder="client@example.com, second@example.com" <?= $state !== 'DRAFT' ? 'readonly' : '' ?>><?= ui_e($clientEmail) ?></textarea>
+                            </label>
 
-            <!-- Client Signing Choice (only in AWAITING_CLIENT) -->
-            <?php if ($state === 'AWAITING_CLIENT'): ?>
-                <button id="openSigningChoice" class="secondary-action" type="button">
-                    Client signing options
-                </button>
-            <?php endif; ?>
+                            <div class="recipient-tools">
+                                <div id="recipientPreview" class="recipient-preview" aria-live="polite"></div>
+                                <small id="recipientValidation" class="send-validation"></small>
+                            </div>
 
-            <!-- Download Final PDF (only in FULLY_SIGNED) -->
-            <?php if ($state === 'FULLY_SIGNED'): ?>
-                <a href="<?= BASE_URL ?>/contracts/<?= $contractId ?>/final-pdf" class="primary-action" style="display: inline-block; text-align: center;">
-                    <i class="fas fa-download"></i> Download Final PDF
-                </a>
-            <?php endif; ?>
-        </div>
+                            <div class="send-client-actions" id="sendClientActions">
+                                <button id="submitForSigning" class="send-client-action primary-action w-full rounded-md text-sm font-bold" type="button" <?= $isNew ? 'disabled' : '' ?>>
+                                    <span id="submitSigningSpinner" class="spinner hidden"></span>
+                                    <?= ui_icon('send') ?>
+                                    <span id="submitSigningText">Save draft and email client</span>
+                                </button>
+                                <small id="sendClientFootnote">Latest edits are saved before the secure signing link is emailed.</small>
+                            </div>
 
-        <!-- Client Email Field (only visible in DRAFT or AWAITING_CLIENT) -->
-        <?php if (in_array($state, ['DRAFT', 'AWAITING_CLIENT'])): ?>
-            <label class="recipient-field" for="clientEmails">
-                <span>Client recipient emails</span>
-                <textarea id="clientEmails" rows="3" placeholder="client@example.com, second@example.com"><?= ui_e($editor_config['client_email'] ?? '') ?></textarea>
-                <small>Use commas, spaces, or new lines for multiple recipients.</small>
-            </label>
-        <?php endif; ?>
-    </div>
+                            <div class="send-client-actions hidden" id="sendAwaitingActions">
+                                <button id="openSigningChoice" class="secondary-action" type="button">
+                                    <?= ui_icon('pen') ?> Client signing options
+                                </button>
+                            </div>
 
-    <!-- Signature Actions (visible after client signed) -->
-    <?php if (in_array($state, ['CLIENT_SIGNED', 'AWAITING_COMPANY'])): ?>
-        <div class="signature-actions">
-            <h3>Next steps</h3>
-            <?php if ($state === 'CLIENT_SIGNED'): ?>
-                <p class="text-muted">Client signature has been recorded. Proceed to apply company seal.</p>
-            <?php endif; ?>
-            <?php if ($state === 'AWAITING_COMPANY'): ?>
-                <p class="text-muted">Review the contract and apply the company seal to finalize.</p>
-            <?php endif; ?>
-        </div>
-    <?php endif; ?>
+                            <div id="sendResult" class="send-result hidden" aria-live="polite"></div>
+                        </div>
+                    <?php endif; ?>
 
-    <!-- Hard Copy Upload (only in AWAITING_CLIENT) -->
-    <?php if ($state === 'AWAITING_CLIENT'): ?>
-        <form id="signedCopyForm" class="upload-box" enctype="multipart/form-data">
-            <label for="signedCopyFile">Returned hard-copy scan</label>
-            <input id="signedCopyFile" name="signed_copy" type="file" accept=".pdf,.png,.jpg,.jpeg">
-            <button type="submit">Upload signed scan</button>
-            <small id="uploadMessage">Attach the scan after the client signs a printed copy.</small>
-        </form>
-    <?php endif; ?>
-</section>
+                    <?php if ($state === 'AWAITING_COMPANY'): ?>
+                        <form class="signature-actions company-seal-card" method="POST" action="<?= BASE_URL ?>/contracts/<?= $contractId ?>/company-seal">
+                            <h3>Company action</h3>
+                            <p class="text-muted">Client signature has been recorded. Apply the company seal to finalize the contract.</p>
+                            <button type="submit" class="primary-action">
+                                <?= ui_icon('shield-check') ?> Apply Company Seal
+                            </button>
+                        </form>
+                    <?php endif; ?>
+
+                    <?php if ($state === 'FULLY_SIGNED'): ?>
+                        <div class="signature-actions">
+                            <h3>Execution complete</h3>
+                            <a href="<?= BASE_URL ?>/contracts/<?= $contractId ?>/final-pdf" class="primary-action">
+                                <?= ui_icon('download') ?> Download Final PDF
+                            </a>
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+                <?php if (in_array($state, ['CLIENT_SIGNED', 'AWAITING_COMPANY'], true)): ?>
+                    <div class="signature-actions">
+                        <h3>Next steps</h3>
+                        <?php if ($state === 'CLIENT_SIGNED'): ?>
+                            <p class="text-muted">Client signature has been recorded. Proceed to apply company seal.</p>
+                        <?php endif; ?>
+                        <?php if ($state === 'AWAITING_COMPANY'): ?>
+                            <p class="text-muted">Review the contract and apply the company seal to finalize.</p>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (in_array($state, ['DRAFT', 'AWAITING_CLIENT'], true)): ?>
+                    <form id="signedCopyForm" class="upload-box <?= $state === 'AWAITING_CLIENT' ? '' : 'hidden' ?>" enctype="multipart/form-data">
+                        <label for="signedCopyFile">Returned hard-copy scan</label>
+                        <input id="signedCopyFile" name="signed_copy" type="file" accept=".pdf,.png,.jpg,.jpeg">
+                        <button type="submit">Upload signed scan</button>
+                        <small id="uploadMessage">Attach the scan after the client signs a printed copy.</small>
+                    </form>
+                <?php endif; ?>
+            </section>
             <section class="panel-section" data-panel-section="distribution">
                 <!-- Feature E5: distribution unlocks after company execution is complete. -->
                 <div class="panel-header"><h2>Final distribution</h2><small>Available after the contract is fully signed.</small></div>

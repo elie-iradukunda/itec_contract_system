@@ -5,9 +5,12 @@ $title = 'Contract Editor - ' . ($contract['title'] ?? 'New Contract');
 $activeNav = 'editor';
 $headerMeta = 'document editor';
 $showPageHeader = false;
-$pageStyles = [BASE_URL . '/public/assets/css/contract-editor.css'];
+$pageStyles = [
+    BASE_URL . '/public/assets/css/contract-editor.css',
+    'https://cdn.quilljs.com/1.3.6/quill.snow.css',
+];
 $pageScripts = [
-    BASE_URL . '/public/vendor/tinymce/tinymce.min.js',
+    'https://cdn.quilljs.com/1.3.6/quill.js',
     BASE_URL . '/public/assets/js/contract-editor.js',
 ];
 
@@ -21,6 +24,8 @@ $editor_config = [
     'readonly' => ($contract['signing_state'] ?? 'DRAFT') !== 'DRAFT',
     'show_side_panel' => true,
     'signatures' => $signatures ?? [],
+    'client_name' => $contract['client_name'] ?? '',
+    'client_email' => $contract['client_email'] ?? '',
 ];
 
 require dirname(__DIR__) . '/components/contract-editor.php';

@@ -58,6 +58,7 @@ $router->get('/contracts/{id}/{name}/view', [\Controllers\ContractController::cl
 // ============================================
 $router->get('/contracts/{id}/versions', [\Controllers\VersionController::class, 'index']);
 $router->post('/contracts/{id}/versions/{version}/restore', [\Controllers\VersionController::class, 'restore']);
+$router->get('/contracts/{id}/versions/{version}/preview', [\Controllers\VersionController::class, 'preview']);
 $router->get('/contracts/{id}/versions/{version}/download', [\Controllers\VersionController::class, 'download']);
 $router->get('/contracts/{id}/versions/compare/{v1}/{v2}', [\Controllers\VersionController::class, 'compare']);
 
