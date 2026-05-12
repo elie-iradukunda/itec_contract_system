@@ -699,16 +699,14 @@ public function apiStore()
     
     try {
         // Insert into database first to get contract ID
-        $sql = "INSERT INTO contracts (client_name, client_email, title, description, signing_state, created_by) 
-                VALUES (:client_name, :client_email, :title, :description, 'DRAFT', :created_by)";
+        $sql = "INSERT INTO contracts (title, description, signing_state, created_by) 
+                VALUES (:title, :description, 'DRAFT', :created_by)";
         
         $stmt = $this->db->prepare($sql);
         $stmt->execute([
-            'client_name' => $clientName,
-            'client_email' => $clientEmail,
             'title' => $title,
             'description' => $input['description'] ?? null,
-            'created_by' => $input['created_by'] ?? $_POST['created_by'] ?? 'api_user'
+            'created_by' => 1
         ]);
         
         $contractId = $this->db->lastInsertId();
@@ -720,15 +718,6 @@ public function apiStore()
             'client_name' => $clientName,
             'client_email' => $clientEmail,
             'content' => $input['content'] ?? null,
-            'sections' => $input['sections'] ?? null,
-            'services' => $input['services'] ?? null,
-            'amount' => $input['amount'] ?? null,
-            'payment_terms' => $input['payment_terms'] ?? null,
-            'start_date' => $input['start_date'] ?? null,
-            'duration' => $input['duration'] ?? null,
-            'termination' => $input['termination'] ?? null,
-            'governing_law' => $input['governing_law'] ?? 'Rwanda',
-            'effective_date' => $input['effective_date'] ?? null
         ]);
         
         // Update contract with file path
