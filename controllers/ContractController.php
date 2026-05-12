@@ -1143,4 +1143,58 @@ private function resolveContractPath($path)
         : dirname(__DIR__) . '/' . ltrim($path, '/');
 }
 
+
+
+
+
+   public function streamPdf($id)
+{
+    // Get the file path from audit log
+    $stmt = $this->db->prepare("
+        SELECT uploaded_file_path
+        FROM doc_signature_audit
+        WHERE contract_id = ? AND event_type = 'hard_copy_uploaded'
+        ORDER BY timestamp DESC
+        LIMIT 1
+    ");
+    $stmt->execute([$id]);
+    $audit = $stmt->fetch();
+
+    if ($audit && !empty($audit['uploaded_file_path'])) {
+        $filePath = $audit['uploaded_file_path'];
+    } else {
+        $stmt = $this->db->prepare("SELECT file_path FROM contracts WHERE id = ? LIMIT 1");
+        $stmt->execute([$id]);
+        $row = $stmt->fetch();
+        $filePath = $row['file_path'] ?? '';
+    }
+
+    // Validate the file
+    if (empty($filePath) || !file_exists($filePath)) {
+        http_response_code(404);
+        echo 'Document not found';
+        return;
+    }
+
+    // Get file info
+    $fileSize = filesize($filePath);
+    $fileName = 'contract_' . $id . '.pdf';
+    
+    // Set headers for inline display
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: inline; filename="' . $fileName . '"');
+    header('Content-Length: ' . $fileSize);
+    header('Cache-Control: public, max-age=0');
+    header('Pragma: public');
+    
+    // Disable output buffering
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    
+    // Read and output the file
+    readfile($filePath);
+    exit;
+}
+
 }
