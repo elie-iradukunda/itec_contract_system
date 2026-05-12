@@ -39,7 +39,7 @@ $router->get('/sign/{id}', [\Controllers\ContractController::class, 'signPage'])
 $router->get('/sign-digitally/{id}', [\Controllers\SignatureController::class, 'digitalSignPage']);
 
 // Upload hard copy page
-$router->get('/upload-contract/{id}', [\Controllers\UploadController::class, 'uploadPage']);
+$router->get('/upload-contract/{id}', [\Controllers\UploadController::class, 'uploadHardCopyPage']);
 // ============================================
 // TASK E1: IN-BROWSER EDITOR
 // ============================================
@@ -73,7 +73,7 @@ $router->get('/contracts/{id}/sign-digitally', [\Controllers\SignatureController
 $router->get('/contracts/sign/{id}', [\Controllers\SignatureController::class, 'signPage']);
 $router->get('/contracts/sign-company/{id}', [\Controllers\ContractController::class, 'readonly']);
 $router->get('/contracts/{id}/print-pdf', [\Controllers\ContractController::class, 'generatePrintPDF']);
-$router->post('/contracts/{id}/upload-signed-copy', [\Controllers\UploadController::class, 'uploadSignedCopy']);
+$router->post('/contracts/{id}/upload-contract', [\Controllers\UploadController::class, 'uploadSignedCopy']);
 $router->get('/contracts/{id}/upload-hard-copy', [\Controllers\UploadController::class, 'uploadHardCopyPage']);
 
 // ============================================
