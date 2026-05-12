@@ -1,3 +1,5 @@
+<!-- editor  -->
+ 
 <?php
 $title = 'Contract Editor - ' . ($contract['title'] ?? 'New Contract');
 $activeNav = 'editor';
