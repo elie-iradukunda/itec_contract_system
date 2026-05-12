@@ -16,23 +16,34 @@ class OscarSealService
 {
     private $sealPath;
     private $storageDir;
+    private $sealOutputDir;
 
     public function __construct()
     {
         $this->sealPath = __DIR__ . '/../storage/seals/company_seal.png';
         $this->storageDir = __DIR__ . '/../storage/contracts/';
+        $this->sealOutputDir = __DIR__ . '/../storage/contracts/seal/';
 
+        $this->ensureDirectoriesExist();
         $this->ensureSealExists();
+    }
+
+    private function ensureDirectoriesExist()
+    {
+        $dirs = [
+            dirname($this->sealPath),
+            $this->sealOutputDir
+        ];
+
+        foreach ($dirs as $dir) {
+            if (!is_dir($dir)) {
+                mkdir($dir, 0777, true);
+            }
+        }
     }
 
     private function ensureSealExists()
     {
-        $sealDir = dirname($this->sealPath);
-
-        if (!is_dir($sealDir)) {
-            mkdir($sealDir, 0777, true);
-        }
-
         if (!file_exists($this->sealPath)) {
             $this->createSealImage();
         }
@@ -41,7 +52,6 @@ class OscarSealService
     private function createSealImage()
     {
         if (!function_exists('imagecreatetruecolor')) {
-            // GD is optional in local XAMPP; FPDI falls back to a drawn text seal when this image is absent.
             return;
         }
 
@@ -61,14 +71,12 @@ class OscarSealService
         imagestring($image, 3, 95, 180, 'AUTHORIZED', $black);
 
         imagepng($image, $this->sealPath);
-
         imagedestroy($image);
     }
 
     public function applySeal($contractId, $approverName, $inputFilePath = null)
     {
         try {
-
             if (!$inputFilePath) {
                 $inputFilePath = $this->getContractFilePath($contractId);
             }
@@ -82,15 +90,8 @@ class OscarSealService
 
             $approvalCode = 'ULID_' . Ulid::generate();
 
-            $outputDir = $this->storageDir . $contractId . '/';
-
-            if (!is_dir($outputDir)) {
-                mkdir($outputDir, 0777, true);
-            }
-
             $timestamp = time();
-
-            $outputPath = $outputDir . 'sealed_' . $timestamp . '.pdf';
+            $outputPath = $this->sealOutputDir . 'sealed_' . $contractId . '_' . $timestamp . '.pdf';
 
             $pdfPath = $this->convertToPdf($inputFilePath);
 
@@ -127,7 +128,6 @@ class OscarSealService
             ];
 
         } catch (\Throwable $e) {
-
             return [
                 'success' => false,
                 'error' => $e->getMessage()
@@ -139,7 +139,15 @@ class OscarSealService
     {
         try {
             $db = \Core\Database::getInstance()->getConnection();
-            $stmt = $db->prepare("SELECT file_path FROM contracts WHERE id = ?");
+            
+            // First try to get uploaded hard copy from audit log
+            $stmt = $db->prepare("
+                SELECT uploaded_file_path 
+                FROM doc_signature_audit 
+                WHERE contract_id = ? AND event_type = 'hard_copy_uploaded' 
+                ORDER BY timestamp DESC 
+                LIMIT 1
+            ");
             $stmt->execute([(int) $contractId]);
             $filePath = $stmt->fetchColumn();
 
@@ -149,30 +157,67 @@ class OscarSealService
                     return $resolved;
                 }
             }
+            
+            // If no hard copy, try to get the digitally signed contract file
+            $stmt = $db->prepare("
+                SELECT dsa.uploaded_file_path 
+                FROM doc_signature_audit dsa
+                WHERE dsa.contract_id = ? AND dsa.event_type = 'signature_created'
+                ORDER BY dsa.timestamp DESC 
+                LIMIT 1
+            ");
+            $stmt->execute([(int) $contractId]);
+            $filePath = $stmt->fetchColumn();
+            
+            if ($filePath) {
+                $resolved = $this->resolvePath($filePath);
+                if (file_exists($resolved)) {
+                    return $resolved;
+                }
+            }
+            
+            // Fallback: Get the contract file path from contracts table
+            $stmt = $db->prepare("
+                SELECT file_path 
+                FROM contracts 
+                WHERE id = ?
+            ");
+            $stmt->execute([(int) $contractId]);
+            $filePath = $stmt->fetchColumn();
+            
+            if ($filePath) {
+                $resolved = $this->resolvePath($filePath);
+                if (file_exists($resolved)) {
+                    return $resolved;
+                }
+            }
+            
         } catch (\Throwable $error) {
             error_log('Seal file lookup failed: ' . $error->getMessage());
         }
 
-        return $this->storageDir . $contractId . '/contract.docx';
+        // Final fallback - default path
+        return $this->storageDir . 'contract_' . $contractId . '.docx';
     }
 
     private function resolvePath($path)
     {
-        $path = str_replace('\\', '/', (string) $path);
-
-        if ($path === '') {
-            return '';
+        $path = str_replace('\\', '/', $path);
+        
+        if (strpos($path, 'storage/') === 0) {
+            $path = __DIR__ . '/../' . $path;
         }
-
-        return preg_match('/^[A-Za-z]:\//', $path) || str_starts_with($path, '/')
-            ? $path
-            : dirname(__DIR__) . '/' . ltrim($path, '/');
+        
+        if (strpos($path, 'C:') === 0 || strpos($path, '/') === 0) {
+            return $path;
+        }
+        
+        return __DIR__ . '/../' . $path;
     }
 
     private function convertToPdf($inputPath)
     {
         try {
-
             $extension = strtolower(pathinfo($inputPath, PATHINFO_EXTENSION));
 
             if ($extension === 'pdf') {
@@ -192,13 +237,10 @@ class OscarSealService
             }
 
             $zip = new ZipArchive();
-
             $openResult = $zip->open($inputPath);
 
             if ($openResult !== true) {
-                throw new Exception(
-                    'Invalid DOCX. Zip open failed with code: ' . $openResult
-                );
+                throw new Exception('Invalid DOCX. Zip open failed with code: ' . $openResult);
             }
 
             if ($zip->locateName('_rels/.rels') === false) {
@@ -209,22 +251,12 @@ class OscarSealService
             $zip->close();
 
             Settings::setPdfRendererName(Settings::PDF_RENDERER_DOMPDF);
-
-            Settings::setPdfRendererPath(
-                realpath(__DIR__ . '/../vendor/dompdf/dompdf')
-            );
+            Settings::setPdfRendererPath(realpath(__DIR__ . '/../vendor/dompdf/dompdf'));
 
             $phpWord = IOFactory::load($inputPath);
 
-            $tempPdfPath =
-                dirname($inputPath) .
-                DIRECTORY_SEPARATOR .
-                'tmp_' .
-                uniqid() .
-                '.pdf';
-
+            $tempPdfPath = dirname($inputPath) . DIRECTORY_SEPARATOR . 'tmp_' . uniqid() . '.pdf';
             $writer = IOFactory::createWriter($phpWord, 'PDF');
-
             $writer->save($tempPdfPath);
 
             if (!file_exists($tempPdfPath)) {
@@ -234,9 +266,7 @@ class OscarSealService
             return $tempPdfPath;
 
         } catch (\Throwable $e) {
-
             error_log('Conversion Error: ' . $e->getMessage());
-
             return $this->createFallbackPdf($inputPath);
         }
     }
@@ -268,14 +298,9 @@ class OscarSealService
         }
     }
 
-    private function applyStampAndSeal(
-        $inputPdf,
-        $outputPdf,
-        $approverName,
-        $approvalCode
-    ) {
+    private function applyStampAndSeal($inputPdf, $outputPdf, $approverName, $approvalCode)
+    {
         try {
-
             $pdf = new Fpdi();
 
             $pdf->SetCreator('ITEC Contract System');
@@ -288,28 +313,15 @@ class OscarSealService
             $pageCount = $pdf->setSourceFile($inputPdf);
 
             for ($pageNo = 1; $pageNo <= $pageCount; $pageNo++) {
-
                 $templateId = $pdf->importPage($pageNo);
-
                 $size = $pdf->getTemplateSize($templateId);
+                $orientation = $size['width'] > $size['height'] ? 'L' : 'P';
 
-                $orientation =
-                    $size['width'] > $size['height'] ? 'L' : 'P';
-
-                $pdf->AddPage(
-                    $orientation,
-                    [$size['width'], $size['height']]
-                );
-
+                $pdf->AddPage($orientation, [$size['width'], $size['height']]);
                 $pdf->useTemplate($templateId);
 
                 $this->addSealToPage($pdf);
-
-                $this->addStampToPage(
-                    $pdf,
-                    $approverName,
-                    $approvalCode
-                );
+                $this->addStampToPage($pdf, $approverName, $approvalCode);
             }
 
             $pdf->Output($outputPdf, 'F');
@@ -317,9 +329,7 @@ class OscarSealService
             return file_exists($outputPdf);
 
         } catch (\Throwable $e) {
-
             error_log('FPDI Error: ' . $e->getMessage());
-
             return false;
         }
     }
@@ -332,37 +342,18 @@ class OscarSealService
         $x = $pageWidth - 60;
         $y = $pageHeight - 60;
 
-        if (
-            file_exists($this->sealPath) &&
-            mime_content_type($this->sealPath) === 'image/png'
-        ) {
-
-            $pdf->Image(
-                $this->sealPath,
-                $x,
-                $y,
-                40,
-                40,
-                'PNG'
-            );
-
+        if (file_exists($this->sealPath) && mime_content_type($this->sealPath) === 'image/png') {
+            $pdf->Image($this->sealPath, $x, $y, 40, 40, 'PNG');
         } else {
-
             $pdf->SetFont('helvetica', 'B', 8);
-
             $pdf->SetDrawColor(255, 0, 0);
-
             $pdf->Ellipse($x + 20, $y + 20, 18, 18);
-
             $pdf->Text($x + 8, $y + 18, 'SEAL');
         }
     }
 
-    private function addStampToPage(
-        $pdf,
-        $approverName,
-        $approvalCode
-    ) {
+    private function addStampToPage($pdf, $approverName, $approvalCode)
+    {
         $pageHeight = $pdf->getPageHeight();
 
         $x = 15;
@@ -370,48 +361,15 @@ class OscarSealService
 
         $pdf->SetFillColor(240, 240, 240);
         $pdf->SetDrawColor(0, 0, 0);
-
         $pdf->Rect($x, $y, 85, 35, 'DF');
 
-        $pdf->SetFont('helvetica', 'B', 9);
-
-        $pdf->SetXY($x + 4, $y + 4);
-
-        $pdf->Cell(
-            70,
-            5,
-            'APPROVED FOR EXECUTION',
-            0,
-            1
-        );
-
+        
         $pdf->SetFont('helvetica', '', 7);
-
         $pdf->SetX($x + 4);
-        $pdf->Cell(
-            70,
-            4,
-            'By: ' . $approverName,
-            0,
-            1
-        );
-
+        $pdf->Cell(70, 4, 'By: ' . $approverName, 0, 1);
         $pdf->SetX($x + 4);
-        $pdf->Cell(
-            70,
-            4,
-            'Code: ' . $approvalCode,
-            0,
-            1
-        );
-
+        $pdf->Cell(70, 4, 'Code: ' . $approvalCode, 0, 1);
         $pdf->SetX($x + 4);
-        $pdf->Cell(
-            70,
-            4,
-            'Date: ' . date('Y-m-d H:i:s'),
-            0,
-            1
-        );
+        $pdf->Cell(70, 4, 'Date: ' . date('Y-m-d H:i:s'), 0, 1);
     }
 }
