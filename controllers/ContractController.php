@@ -74,6 +74,16 @@ class ContractController extends Controller
         header('Location: ' . BASE_URL . '/contracts/show/' . (int) $id);
         exit;
     }
+    public function signSuccessPage($id)
+        {
+            unset($_SESSION['signing_authorized']);
+            unset($_SESSION['signing_contract_id']);
+            
+            $this->view('contracts/sign-success', [
+                'contract_id' => $id,
+                'title' => 'Contract Signed'
+            ]);
+        }
 
     public function review($id)
     {
