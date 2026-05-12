@@ -5,6 +5,7 @@ namespace Controllers;
 use Core\Controller;
 use Core\Database;
 use Core\Mail;
+use Services\DocumentGeneratorService;
 use Services\OscarStateMachineService;
 use ZipArchive;
 use Exception;
@@ -851,103 +852,13 @@ public function apiStore()
 
     private function streamContractPdf($id, $printReady)
     {
-        $contract = $this->contractService->getEditorData($id);
-        if (!$contract) {
-            http_response_code(404);
-            echo 'Contract not found';
-            return;
-        }
-
-        // Fetch signatures for this contract
-        $signatures = $this->getSignaturesForContract($id);
-
-        $pdf = new \TCPDF();
-        $pdf->SetCreator('ITEC Contract System');
-        $pdf->SetTitle($contract['title']);
-        $pdf->AddPage();
-        $pdf->SetFont('helvetica', '', 11);
-        $pdf->writeHTML('<h1>' . htmlspecialchars($contract['title']) . '</h1>' . ($contract['content'] ?? ''), true, false, true, false, '');
-
-        // Add textual signature section as fallback
-        $pdf->Ln(12);
-        $pdf->SetFont('helvetica', 'B', 10);
-        $pdf->Cell(0, 6, 'SIGNATURES:', 0, 1);
-        $pdf->SetFont('helvetica', '', 9);
-        $pdf->Ln(2);
-
-        // Reserve space for signature images
-        $startY = $pdf->GetY();
-        $pdf->Cell(0, 5, '', 0, 1);
-
-        // Determine signatures directory
-        $signDir = __DIR__ . '/../storage/signatures/';
-
-        // For layout, left column = client, right column = company rep
-        $client = null;
-        $company = null;
-        foreach ($signatures as $s) {
-            if ($s['signer_role'] === 'client') $client = $s;
-            if ($s['signer_role'] === 'company_rep') $company = $s;
-        }
-
-        $imgWidth = 60; // mm approx
-        $imgHeight = 25; // mm approx
-
-        // Y position to place images
-        $yPos = $pdf->GetY() + 6;
-
-        // Place client signature image if present
-        if ($client) {
-            $pattern = $signDir . 'sig_' . $id . '_*_' . $client['id'] . '.png';
-            $files = glob($pattern);
-            if (!empty($files)) {
-                $img = $files[0];
-                $pdf->Image($img, 20, $yPos, $imgWidth, $imgHeight, 'PNG');
-                $pdf->SetXY(20, $yPos + $imgHeight + 2);
-                $pdf->Cell(0, 5, 'Client: ' . htmlspecialchars($client['signer_id']) . '  -  ' . date('M d, Y', strtotime($client['signed_at'])), 0, 1);
-            } else {
-                $pdf->SetXY(20, $yPos + $imgHeight + 2);
-                $pdf->Cell(0, 5, 'Client Signature: ______________________', 0, 1);
-            }
-        } else {
-            $pdf->SetXY(20, $yPos + $imgHeight + 2);
-            $pdf->Cell(0, 5, 'Client Signature: ______________________', 0, 1);
-        }
-
-        // Place company signature image if present (right side)
-        if ($company) {
-            $pattern = $signDir . 'sig_' . $id . '_*_' . $company['id'] . '.png';
-            $files = glob($pattern);
-            if (!empty($files)) {
-                $img = $files[0];
-                $pdf->Image($img, 120, $yPos, $imgWidth, $imgHeight, 'PNG');
-                $pdf->SetXY(120, $yPos + $imgHeight + 2);
-                $pdf->Cell(0, 5, 'Company Rep: ' . htmlspecialchars($company['signer_id']) . '  -  ' . date('M d, Y', strtotime($company['signed_at'])), 0, 1);
-            } else {
-                $pdf->SetXY(120, $yPos + $imgHeight + 2);
-                $pdf->Cell(0, 5, 'Company Rep Signature: ______________________', 0, 1);
-            }
-        } else {
-            $pdf->SetXY(120, $yPos + $imgHeight + 2);
-            $pdf->Cell(0, 5, 'Company Rep Signature: ______________________', 0, 1);
-        }
-
-        // Optionally overlay company seal if available (look for 'seal_{$id}.png')
-        $sealPattern = $signDir . 'seal_' . $id . '.png';
-        $sealFiles = glob($sealPattern);
-        if (!empty($sealFiles)) {
-            $seal = $sealFiles[0];
-            // place seal centered near top-right of first page
-            $pdf->Image($seal, 150, 20, 30, 30, 'PNG');
-        }
-
-        $pdf->Output('contract-' . $id . '.pdf', 'I');
+        $this->outputGeneratedContractPdf((int) $id, 'inline', 'contract-' . (int) $id . '.pdf');
     }
 
     private function getSignaturesForContract($contractId)
     {
         $stmt = $this->db->prepare("
-            SELECT id, signer_id, signer_role, signed_at 
+            SELECT id, signer_id, signer_role, signature_file_path, signed_at 
             FROM doc_signatures 
             WHERE contract_id = ? 
             ORDER BY signed_at ASC
@@ -1050,52 +961,37 @@ private function convertToPdf($inputPath)
 
     public function generatePrintPDF($id)
 {
-    // Get contract data
-    $stmt = $this->db->prepare("SELECT file_path, title FROM contracts WHERE id = ?");
-    $stmt->execute([$id]);
-    $contract = $stmt->fetch();
-    
+    $this->outputGeneratedContractPdf((int) $id, 'inline', 'contract_' . (int) $id . '.pdf');
+}
+
+private function outputGeneratedContractPdf($id, $disposition = 'inline', $filename = null)
+{
+    $contract = $this->contractService->getEditorData((int) $id);
     if (!$contract) {
         http_response_code(404);
         echo "Contract not found";
         return;
     }
-    
-    $filePath = $this->resolveContractPath($contract['file_path'] ?? '');
-    
-    if (!file_exists($filePath)) {
-        http_response_code(404);
-        echo "Contract file not found";
-        return;
-    }
-    
-    // Create temp output file
-    $tempDir = __DIR__ . '/../storage/temp/';
-    if (!is_dir($tempDir)) {
-        mkdir($tempDir, 0777, true);
-    }
-    
-    $result = $this->convertToPdf($filePath);
-    
-    if (!$result) {
+
+    $signatures = $this->getSignaturesForContract((int) $id);
+    $result = (new DocumentGeneratorService())->generateContractPdf((int) $id, $contract, $signatures);
+
+    if (!$result || !is_file($result)) {
         http_response_code(500);
         echo "Failed to generate PDF";
         return;
     }
-   
-    
-    // Set headers for PDF download
+
+    $filename = $filename ?: 'contract_' . (int) $id . '.pdf';
+
     header('Content-Type: application/pdf');
-    header('Content-Disposition: attachment; filename="contract_' . $id . '.pdf"');
+    header('Content-Disposition: ' . $disposition . '; filename="' . basename($filename) . '"');
     header('Cache-Control: private, max-age=0, must-revalidate');
     header('Pragma: public');
     header('Content-Length: ' . filesize($result));
-    
-    // Output the PDF file
+
     readfile($result);
-    
-    // Clean up temp file
-    unlink($result);
+    @unlink($result);
 }
 
 private function resolveContractPath($path)

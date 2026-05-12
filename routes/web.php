@@ -37,6 +37,7 @@ $router->get('/sign/{id}', [\Controllers\ContractController::class, 'signPage'])
 
 // Digital signature page
 $router->get('/sign-digitally/{id}', [\Controllers\SignatureController::class, 'digitalSignPage']);
+$router->post('/contracts/{id}/preview-signature-pdf', [\Controllers\SignatureController::class, 'previewSignaturePdf']);
 
 // Upload hard copy page
 $router->get('/upload-contract/{id}', [\Controllers\UploadController::class, 'uploadPage']);
