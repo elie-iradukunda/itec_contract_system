@@ -3,16 +3,12 @@ $title = 'Company Seal - ' . ($contract['title'] ?? 'Contract');
 $activeNav = 'contracts';
 $headerMeta = 'company seal application';
 $showPageHeader = false;
-$pageStyles = [
-    BASE_URL . '/public/assets/css/contract-editor.css',
-    'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css'
-];
-$pageScripts = [
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js',
-    BASE_URL . '/public/assets/js/company-seal.js',
-];
 
 ob_start();
+
+use Core\Database;
+
+$db = Database::getInstance()->getConnection();
 
 $contractId = $contract['id'] ?? 0;
 $contractTitle = $contract['title'] ?? 'Untitled Contract';
@@ -20,15 +16,34 @@ $clientName = $contract['client_name'] ?? 'N/A';
 $clientEmail = $contract['client_email'] ?? 'N/A';
 $currentState = $contract['signing_state'] ?? 'AWAITING_COMPANY';
 $isReadOnly = ($currentState !== 'AWAITING_COMPANY');
+$approvalCode = $contract['approval_code'] ?? strtoupper(bin2hex(random_bytes(4)));
 
-// Get contract file path for PDF preview
-$contractFile = $contract['file_path'] ?? '';
-$pdfUrl = !empty($contractFile) ? BASE_URL . '/' . $contractFile : '';
-$pdfExists = !empty($contractFile) && file_exists(__DIR__ . '/../' . $contractFile);
+// 1. Get the physical system path
+$stmt = $db->prepare("
+    SELECT uploaded_file_path 
+    FROM doc_signature_audit 
+    WHERE contract_id = ? AND event_type = 'hard_copy_uploaded'
+    ORDER BY timestamp DESC 
+    LIMIT 1
+");
+$stmt->execute([$contractId]);
+$auditRecord = $stmt->fetch();
 
-// Get ULID approval code from session or generate new
-$approvalCode = $_SESSION['approval_code'] ?? 'ULID_' . strtoupper(uniqid());
-$_SESSION['approval_code'] = $approvalCode;
+$contractFile = ($auditRecord && !empty($auditRecord['uploaded_file_path'])) 
+    ? $auditRecord['uploaded_file_path'] 
+    : ($contract['file_path'] ?? '');
+
+// 2. Check existence using system path
+$pdfExists = !empty($contractFile) && file_exists($contractFile);
+
+/**
+ * FIX: Convert Absolute Path to Web URL
+ * We strip the local disk path and replace it with the web base URL.
+ */
+$rootPath = "C:/xampp/htdocs/itec_contract_system/"; 
+$cleanPath = str_replace('\\', '/', $contractFile);
+$relativeUrl = str_replace($rootPath, '', $cleanPath);
+$pdfUrl = BASE_URL . '/' . ltrim($relativeUrl, '/');
 ?>
 
 <div class="container-fluid py-4">
@@ -54,14 +69,14 @@ $_SESSION['approval_code'] = $approvalCode;
                     </div>
                 </div>
                 <div class="card-body p-0">
-                    <div id="pdf-viewer" class="bg-light" style="height: 70vh; overflow: auto; padding: 20px;">
+                    <div id="pdf-viewer" class="bg-light" style="height: 75vh; overflow: auto; padding: 20px;">
                         <div id="pdf-loading" class="text-center py-5">
                             <div class="spinner-border text-primary" role="status">
                                 <span class="visually-hidden">Loading...</span>
                             </div>
                             <p class="mt-2 text-muted">Loading contract document...</p>
                         </div>
-                        <canvas id="pdf-canvas" style="display: none; margin: 0 auto; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"></canvas>
+                        <canvas id="pdf-canvas" style="display: none; margin: 0 auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15);"></canvas>
                         <div id="pdf-error" class="alert alert-danger m-3 d-none">
                             <i class="fas fa-exclamation-triangle me-2"></i>
                             <span id="error-message"></span>
@@ -81,11 +96,9 @@ $_SESSION['approval_code'] = $approvalCode;
                                 Next <i class="fas fa-chevron-right ms-1"></i>
                             </button>
                         </div>
-                        <div>
-                            <span class="text-muted small">
-                                <i class="fas fa-info-circle me-1"></i> Review entire contract before sealing
-                            </span>
-                        </div>
+                        <span class="text-muted small">
+                            <i class="fas fa-info-circle me-1"></i> Review entire contract before sealing
+                        </span>
                     </div>
                 </div>
             </div>
@@ -93,10 +106,10 @@ $_SESSION['approval_code'] = $approvalCode;
 
         <!-- Right Column: Seal Panel -->
         <div class="col-lg-4">
-            <div class="card shadow-sm">
+            <div class="card shadow-sm border-0">
                 <div class="card-header bg-white">
-                    <h5 class="mb-0">
-                        <i class="fas fa-stamp me-2 text-primary"></i>
+                    <h5 class="mb-0 text-primary">
+                        <i class="fas fa-stamp me-2"></i>
                         Apply Company Seal
                     </h5>
                 </div>
@@ -105,78 +118,62 @@ $_SESSION['approval_code'] = $approvalCode;
                         <div class="alert alert-warning">
                             <i class="fas fa-exclamation-triangle me-2"></i>
                             This contract is not in a state that allows sealing.
-                            Current state: <strong><?= $currentState ?></strong>
+                            <br>Current state: <strong><?= $currentState ?></strong>
                         </div>
                         <a href="<?= BASE_URL ?>/contracts/show/<?= $contractId ?>" class="btn btn-secondary w-100">
                             <i class="fas fa-arrow-left me-2"></i> Back to Contract
                         </a>
                     <?php else: ?>
-                        <!-- Contract Info -->
                         <div class="mb-4">
-                            <h6>Contract Information</h6>
-                            <table class="table table-sm table-borderless">
-                                <tr>
-                                    <td class="text-muted">Contract ID:</td>
-                                    <td class="fw-bold">#<?= $contractId ?></td>
-                                </tr>
-                                <tr>
-                                    <td class="text-muted">Title:</td>
-                                    <td><?= htmlspecialchars($contractTitle) ?></td>
-                                </tr>
-                                <tr>
-                                    <td class="text-muted">Client:</td>
-                                    <td><?= htmlspecialchars($clientName) ?></td>
-                                </tr>
-                                <tr>
-                                    <td class="text-muted">Email:</td>
-                                    <td><?= htmlspecialchars($clientEmail) ?></td>
-                                </tr>
-                                <tr>
-                                    <td class="text-muted">Status:</td>
-                                    <td>
-                                        <span class="badge bg-warning text-dark"><?= $currentState ?></span>
-                                    </td>
-                                </tr>
-                            </table>
+                            <h6 class="text-uppercase text-muted small fw-bold mb-3">Contract Summary</h6>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="text-muted">Contract ID:</span>
+                                <span class="fw-bold">#<?= $contractId ?></span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="text-muted">Client:</span>
+                                <span><?= htmlspecialchars($clientName) ?></span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="text-muted">Status:</span>
+                                <span class="badge bg-warning text-dark"><?= $currentState ?></span>
+                            </div>
                         </div>
 
                         <hr>
-
-                        <!-- Confirmation -->
-                        <div class="mb-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="confirmReview" required>
-                                <label class="form-check-label" for="confirmReview">
-                                    I have reviewed the entire contract and confirm it is correct.
-                                </label>
-                            </div>
-                        </div>
 
                         <div class="mb-3">
                             <label for="approverName" class="form-label">Approver Name</label>
                             <input type="text" class="form-control" id="approverName" 
-                                   value="<?= htmlspecialchars($_SESSION['user_name'] ?? $_SESSION['user_email'] ?? 'Company Representative') ?>">
+                                   value="<?= htmlspecialchars($_SESSION['user_name'] ?? 'Company Representative') ?>">
                         </div>
 
-                        <!-- Stamp Preview -->
-                        <div class="mt-4 p-3 bg-light rounded">
-                            <h6 class="mb-2">Stamp Preview</h6>
-                            <div class="small">
-                                <div><strong>APPROVED FOR EXECUTION</strong></div>
-                                <div>By: <span id="previewApprover"><?= htmlspecialchars($_SESSION['user_name'] ?? 'Company Representative') ?></span></div>
-                                <div>Code: <span id="previewCode"><?= $approvalCode ?></span></div>
-                                <div>Date: <span id="previewDate"><?= date('Y-m-d H:i:s') ?></span></div>
+                        <div class="mb-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="confirmReview">
+                                <label class="form-check-label small" for="confirmReview">
+                                    I confirm that I have reviewed the document and it is ready for execution.
+                                </label>
                             </div>
                         </div>
 
-                        <hr>
+                        <!-- Stamp Preview -->
+                        <div class="mb-4 p-3 border rounded bg-light" style="border-left: 4px solid #0d6efd !important;">
+                            <h6 class="mb-2 small fw-bold text-primary text-uppercase">Digital Stamp Preview</h6>
+                            <div class="font-monospace" style="font-size: 0.75rem; line-height: 1.4;">
+                                <div class="fw-bold">APPROVED FOR EXECUTION</div>
+                                <div>BY: <span id="previewApprover"><?= htmlspecialchars($_SESSION['user_name'] ?? 'Company Representative') ?></span></div>
+                                <div>CODE: <span id="previewCode"><?= $approvalCode ?></span></div>
+                                <div>DATE: <span id="previewDate"><?= date('Y-m-d H:i:s') ?></span></div>
+                            </div>
+                        </div>
 
-                        <button type="button" class="btn btn-primary btn-lg w-100" id="applySealBtn" disabled>
-                            <i class="fas fa-stamp me-2"></i> Apply Company Seal & Finalize
+                        <button type="button" class="btn btn-primary btn-lg w-100 mb-2" id="applySealBtn" disabled>
+                            <i class="fas fa-stamp me-2"></i> Finalize & Seal
                         </button>
 
-                        <a href="<?= BASE_URL ?>/contracts/show/<?= $contractId ?>" class="btn btn-outline-secondary btn-lg w-100 mt-2">
-                            <i class="fas fa-times me-2"></i> Cancel
+                        <a href="<?= BASE_URL ?>/contracts/show/<?= $contractId ?>" class="btn btn-link w-100 text-decoration-none text-muted">
+                            Cancel
                         </a>
                     <?php endif; ?>
                 </div>
@@ -185,33 +182,31 @@ $_SESSION['approval_code'] = $approvalCode;
     </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+
 <script>
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-let pdfDoc = null;
-let currentPage = 1;
-let scale = 1.5;
-let pdfUrl = '<?= $pdfUrl ?>';
-let pdfExists = <?= $pdfExists ? 'true' : 'false' ?>;
+let pdfDoc = null,
+    currentPage = 1,
+    scale = 1.5,
+    pdfUrl = '<?= $pdfUrl ?>',
+    pdfExists = <?= $pdfExists ? 'true' : 'false' ?>;
 
-const canvas = document.getElementById('pdf-canvas');
-const ctx = canvas.getContext('2d');
-const loadingDiv = document.getElementById('pdf-loading');
-const errorDiv = document.getElementById('pdf-error');
-const errorMessage = document.getElementById('error-message');
-const prevBtn = document.getElementById('prevPageBtn');
-const nextBtn = document.getElementById('nextPageBtn');
-const pageNumSpan = document.getElementById('pageNum');
-const pageCountSpan = document.getElementById('pageCount');
-const zoomInBtn = document.getElementById('zoomInBtn');
-const zoomOutBtn = document.getElementById('zoomOutBtn');
-const resetZoomBtn = document.getElementById('resetZoomBtn');
-const confirmCheckbox = document.getElementById('confirmReview');
-const applySealBtn = document.getElementById('applySealBtn');
-const approverInput = document.getElementById('approverName');
-const previewApprover = document.getElementById('previewApprover');
-const previewDate = document.getElementById('previewDate');
-const previewCode = document.getElementById('previewCode');
+const canvas = document.getElementById('pdf-canvas'),
+      ctx = canvas.getContext('2d'),
+      loadingDiv = document.getElementById('pdf-loading'),
+      errorDiv = document.getElementById('pdf-error'),
+      errorMessage = document.getElementById('error-message'),
+      prevBtn = document.getElementById('prevPageBtn'),
+      nextBtn = document.getElementById('nextPageBtn'),
+      pageNumSpan = document.getElementById('pageNum'),
+      pageCountSpan = document.getElementById('pageCount'),
+      applySealBtn = document.getElementById('applySealBtn'),
+      confirmCheckbox = document.getElementById('confirmReview'),
+      approverInput = document.getElementById('approverName'),
+      previewApprover = document.getElementById('previewApprover'),
+      previewDate = document.getElementById('previewDate');
 
 function renderPage() {
     if (!pdfDoc) return;
@@ -235,11 +230,8 @@ function renderPage() {
 }
 
 function loadPDF() {
-    if (!pdfExists) {
-        loadingDiv.classList.add('d-none');
-        errorDiv.classList.remove('d-none');
-        errorMessage.textContent = 'Contract document not found. Please ensure the contract file exists.';
-        canvas.style.display = 'none';
+    if (!pdfExists || !pdfUrl) {
+        showError('Document file not found on server.');
         return;
     }
     
@@ -250,106 +242,59 @@ function loadPDF() {
         loadingDiv.classList.add('d-none');
         renderPage();
     }).catch(error => {
-        loadingDiv.classList.add('d-none');
-        errorDiv.classList.remove('d-none');
-        errorMessage.textContent = 'Failed to load PDF: ' + error.message;
-        canvas.style.display = 'none';
+        showError('Error loading PDF: ' + error.message);
     });
 }
 
-function nextPage() {
-    if (pdfDoc && currentPage < pdfDoc.numPages) {
-        currentPage++;
-        renderPage();
-    }
+function showError(msg) {
+    loadingDiv.classList.add('d-none');
+    errorDiv.classList.remove('d-none');
+    errorMessage.textContent = msg;
+    canvas.style.display = 'none';
 }
 
-function prevPage() {
-    if (pdfDoc && currentPage > 1) {
-        currentPage--;
-        renderPage();
-    }
-}
+// Controls
+document.getElementById('zoomInBtn').addEventListener('click', () => { scale += 0.25; renderPage(); });
+document.getElementById('zoomOutBtn').addEventListener('click', () => { if(scale > 0.5) { scale -= 0.25; renderPage(); } });
+document.getElementById('resetZoomBtn').addEventListener('click', () => { scale = 1.5; renderPage(); });
+prevBtn.addEventListener('click', () => { if(currentPage > 1) { currentPage--; renderPage(); } });
+nextBtn.addEventListener('click', () => { if(currentPage < pdfDoc.numPages) { currentPage++; renderPage(); } });
 
-function zoomIn() {
-    scale += 0.25;
-    renderPage();
-}
+approverInput.addEventListener('input', (e) => previewApprover.textContent = e.target.value);
+confirmCheckbox.addEventListener('change', (e) => applySealBtn.disabled = !e.target.checked);
 
-function zoomOut() {
-    if (scale > 0.5) {
-        scale -= 0.25;
-        renderPage();
-    }
-}
-
-function resetZoom() {
-    scale = 1.5;
-    renderPage();
-}
-
-// Update preview when approver name changes
-approverInput.addEventListener('input', function() {
-    previewApprover.textContent = this.value;
-});
-
-// Enable seal button when checkbox is checked
-confirmCheckbox.addEventListener('change', function() {
-    applySealBtn.disabled = !this.checked;
-});
-
-// Update preview date every second
 setInterval(() => {
     previewDate.textContent = new Date().toLocaleString();
 }, 1000);
 
-// Apply Seal
 applySealBtn.addEventListener('click', async function() {
-    const approverName = approverInput.value;
-    
-    if (!approverName.trim()) {
-        alert('Please enter approver name');
-        return;
-    }
-    
-    applySealBtn.disabled = true;
-    applySealBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Applying Seal...';
+    const approverName = approverInput.value.trim();
+    if (!approverName) return alert('Approver name is required.');
+
+    this.disabled = true;
+    this.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Processing...';
     
     try {
         const response = await fetch('<?= BASE_URL ?>/api/contracts/<?= $contractId ?>/seal', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                approver_name: approverName
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ approver_name: approverName })
         });
         
         const result = await response.json();
-        
         if (result.success) {
             window.location.href = '<?= BASE_URL ?>/contracts/show/<?= $contractId ?>?sealed=1';
         } else {
-            alert('Error: ' + (result.error || 'Failed to apply seal'));
-            applySealBtn.disabled = false;
-            applySealBtn.innerHTML = '<i class="fas fa-stamp me-2"></i> Apply Company Seal & Finalize';
+            alert(result.error || 'Failed to apply seal');
+            this.disabled = false;
+            this.innerHTML = '<i class="fas fa-stamp me-2"></i> Finalize & Seal';
         }
-    } catch (error) {
-        alert('Network error: ' + error.message);
-        applySealBtn.disabled = false;
-        applySealBtn.innerHTML = '<i class="fas fa-stamp me-2"></i> Apply Company Seal & Finalize';
+    } catch (e) {
+        alert('Connection error. Please try again.');
+        this.disabled = false;
     }
 });
 
-// Event Listeners
-prevBtn.addEventListener('click', prevPage);
-nextBtn.addEventListener('click', nextPage);
-zoomInBtn.addEventListener('click', zoomIn);
-zoomOutBtn.addEventListener('click', zoomOut);
-resetZoomBtn.addEventListener('click', resetZoom);
-
-// Load PDF on page load
 loadPDF();
 </script>
 
