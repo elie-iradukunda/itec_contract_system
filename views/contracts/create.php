@@ -22,19 +22,7 @@ ob_start();
     ], JSON_UNESCAPED_SLASHES) ?>;
 </script>
 
-<section class="surface generator-stage">
-    <div class="generator-stage-copy">
-        <p>generator-first drafting</p>
-        <h2>Start from the contract data, not the final layout</h2>
-        <span>The document generator already owns the official format. Each field below shows where its content appears in the generated contract so the first draft is easy to fill correctly.</span>
-    </div>
-    <div class="generator-pills">
-        <span><?= ui_icon('image') ?> Company logo</span>
-        <span><?= ui_icon('building') ?> Company details</span>
-        <span><?= ui_icon('123') ?> Contract reference</span>
-        <span><?= ui_icon('pen') ?> Signature block</span>
-    </div>
-</section>
+
 
 <div class="content-split create-builder-layout">
     <form id="contractGeneratorForm" class="surface form-surface generator-form">
