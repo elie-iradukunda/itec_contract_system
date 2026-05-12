@@ -126,25 +126,7 @@ class ContractController extends Controller
         $this->view('contracts/readonly', ['contract_id' => (int) $id, 'contract' => $contract, 'signatures' => $signatures, 'title' => 'Read Only Contract']);
     }
 
-    public function companySeal($id)
-    {
-        if (session_status() === PHP_SESSION_NONE) {
-            @session_start();
-        }
-
-        $contract = $this->contractService->getEditorData((int) $id);
-        if (!$contract) {
-            $this->view('errors/404', ['message' => 'Contract not found']);
-            return;
-        }
-
-        $this->view('contracts/company-seal', [
-            'contract_id' => (int) $id,
-            'contract' => $contract,
-            'title' => 'Company Seal',
-        ]);
-    }
-
+  
     public function viewFinal($id)
     {
         $this->readonly($id);
@@ -1114,6 +1096,44 @@ private function resolveContractPath($path)
     // Read and output the file
     readfile($filePath);
     exit;
+}
+
+public function companySeal($id)
+{
+    // Get contract details
+    $stmt = $this->db->prepare("SELECT * FROM contracts WHERE id = ?");
+    $stmt->execute([$id]);
+    $contract = $stmt->fetch();
+    
+    if (!$contract) {
+        $this->view('errors/404', ['message' => 'Contract not found']);
+        return;
+    }
+    
+    // Check if contract is in AWAITING_COMPANY state
+    if ($contract['signing_state'] !== 'AWAITING_COMPANY') {
+        $this->view('errors/403', ['message' => 'Contract is not ready for company seal. Current state: ' . $contract['signing_state']]);
+        return;
+    }
+    
+    // Get approver name from POST or use default
+    $approverName = $_POST['approver_name'] ?? 'Company Representative';
+    
+    // Apply the seal
+    $sealService = new \Services\OscarSealService();
+    $result = $sealService->applySeal($id, $approverName,);
+    
+    if ($result['success']) {
+        // Update contract state to FULLY_SIGNED
+        $stateMachine = new \Services\OscarStateMachineService($id);
+        $stateResult = $stateMachine->companySign($approverName, $result['approval_code']);
+        
+        // Redirect to contract view with success message in URL
+        header('Location: ' . BASE_URL . '/contracts/show/' . $id . '?sealed=1&code=' . urlencode($result['approval_code']));
+        exit;
+    } else {
+        echo "Failed to apply company seal: " . htmlspecialchars($result['error'] ?? 'Unknown error');
+    }
 }
 
 }
