@@ -678,18 +678,21 @@ public function completeSigning($contractId)
         $this->json(['success' => true, 'distributions' => $stmt->fetchAll()]);
     }
 
+
 public function apiStore()
 {
     // Get JSON input
-    $input = json_decode(file_get_contents('php://input'), true) ?: [];
+    $input = json_decode(file_get_contents('php://input'), true);
     
     // Validate required fields
+    $clientName = $input['client_name'] ?? $_POST['client_name'] ?? null;
+    $clientEmail = $input['client_email'] ?? $_POST['client_email'] ?? null;
     $title = $input['title'] ?? $_POST['title'] ?? null;
     
-    if (!$title) {
+    if (!$clientName || !$clientEmail || !$title) {
         $this->json([
             'success' => false, 
-            'error' => 'Missing required field: title'
+            'error' => 'Missing required fields: client_name, client_email, title'
         ], 400);
         return;
     }
@@ -756,7 +759,7 @@ public function apiStore()
                 'client_name' => $clientName,
                 'client_email' => $clientEmail,
                 'signing_state' => 'DRAFT',
-                'file_path' => $this->relativeProjectPath($filePath),
+                'file_path' => $filePath,
                 'created_at' => date('Y-m-d H:i:s')
             ]
         ]);
