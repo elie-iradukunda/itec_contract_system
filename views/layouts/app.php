@@ -22,6 +22,19 @@ $showPageHeader = $showPageHeader ?? isset($pageHeading);
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="<?= ui_asset('css/home.css') ?>?v=<?= ui_e($assetVersion) ?>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,300..900;1,300..900&display=swap" rel="stylesheet">
+<style>
+
+body {
+  font-family: "Rubik", sans-serif;
+  font-optical-sizing: auto;
+  font-weight: 400;
+  font-style: normal;
+}
+
+</style>
     <?php foreach ($pageStyles as $style): ?>
         <link rel="stylesheet" href="<?= ui_e($style) ?>?v=<?= ui_e($assetVersion) ?>">
     <?php endforeach; ?>
