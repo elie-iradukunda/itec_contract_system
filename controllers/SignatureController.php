@@ -36,6 +36,21 @@ class SignatureController extends Controller
             $this->json(['success' => false, 'error' => 'Missing signer_id'], 400);
             return;
         }
+
+        if ($role === 'client') {
+            if (session_status() === PHP_SESSION_NONE) {
+                @session_start();
+            }
+
+            if (
+                !isset($_SESSION['signing_authorized']) ||
+                $_SESSION['signing_authorized'] !== true ||
+                (int) ($_SESSION['signing_contract_id'] ?? 0) !== (int) $contractId
+            ) {
+                $this->json(['success' => false, 'error' => 'This signing session is not authorized. Please use the secure email link.'], 403);
+                return;
+            }
+        }
         
         // Get contract file path
         $stmt = $this->db->prepare("SELECT id, file_path, signing_state FROM contracts WHERE id = ?");
@@ -217,7 +232,46 @@ class SignatureController extends Controller
 
     public function signPage($contractId = null)
     {
-        $this->view('contracts/sign-digitally', ['contract_id' => (int) ($contractId ?: 1), 'title' => 'Digital Signing']);
+        if (session_status() === PHP_SESSION_NONE) {
+            @session_start();
+        }
+
+        $contractId = (int) ($contractId ?: 1);
+        $stmt = $this->db->prepare("SELECT id, title, signing_state FROM contracts WHERE id = ?");
+        $stmt->execute([$contractId]);
+        $contract = $stmt->fetch();
+
+        if (!$contract) {
+            $this->view('errors/404', ['message' => 'Contract not found']);
+            return;
+        }
+
+        $this->view('contracts/sign-digitally', [
+            'contract_id' => $contractId,
+            'contract' => $contract,
+            'already_signed' => in_array($contract['signing_state'], ['CLIENT_SIGNED', 'AWAITING_COMPANY', 'FULLY_SIGNED'], true),
+            'signing_email' => $_SESSION['signing_email'] ?? '',
+            'title' => 'Digital Signing'
+        ]);
+    }
+
+    public function digitalSignPage($contractId = null)
+    {
+        if (session_status() === PHP_SESSION_NONE) {
+            @session_start();
+        }
+
+        $contractId = (int) ($contractId ?: 1);
+        if (
+            !isset($_SESSION['signing_authorized']) ||
+            $_SESSION['signing_authorized'] !== true ||
+            (int) ($_SESSION['signing_contract_id'] ?? 0) !== $contractId
+        ) {
+            header('Location: ' . BASE_URL . '/');
+            exit;
+        }
+
+        $this->signPage($contractId);
     }
 
     public function sealPage()

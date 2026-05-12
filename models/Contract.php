@@ -4,6 +4,7 @@ namespace Models;
 
 use Core\Database;
 use PDO;
+use Services\DocumentGeneratorService;
 
 class Contract
 {
@@ -143,8 +144,19 @@ class Contract
         file_put_contents($htmlFile, $html);
         file_put_contents($folder . '/contract.txt', $this->htmlToPlainText($html));
 
-        $path = $folder . '/contract.docx';
-        $this->writeDocx($path, $html);
+        $contract = $this->find($id);
+        if (!$contract) {
+            throw new \Exception('Contract not found');
+        }
+
+        $path = (new DocumentGeneratorService())->generateContract((int) $id, [
+            'title' => $contract['title'] ?? 'Untitled Contract',
+            'document_type' => $contract['document_type'] ?? 'Service Agreement',
+            'description' => $contract['description'] ?? null,
+            'client_name' => $contract['client_name'] ?? null,
+            'client_email' => $contract['client_email'] ?? null,
+            'content' => $html,
+        ]);
         $this->updateContractFilePath($id, $path);
 
         if ($trackChange && trim($oldHtml) !== trim($html)) {

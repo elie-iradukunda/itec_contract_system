@@ -99,14 +99,6 @@ $jsConfig = [
                 <option>Legal Agreement</option>
             </select>
         </label>
-        <label>
-            <span>Client name</span>
-            <input id="clientName" name="client_name" type="text" value="Demo Client" required>
-        </label>
-        <label>
-            <span>Client email</span>
-            <input id="clientEmail" name="client_email" type="email" value="client@itec.local" required>
-        </label>
         <label class="field-span">
             <span>Description</span>
             <textarea id="contractDescription" name="description" rows="2" placeholder="Short internal description"></textarea>
@@ -189,6 +181,11 @@ $jsConfig = [
                         <button id="submitForSigning" class="primary-action" type="button" <?= $isNew ? 'disabled' : '' ?>>Submit for signing</button>
                         <button id="openSigningChoice" class="secondary-action" type="button" <?= $isNew ? 'disabled' : '' ?>>Client path</button>
                     </div>
+                    <label class="recipient-field" for="clientEmails">
+                        <span>Client recipient emails</span>
+                        <textarea id="clientEmails" rows="3" placeholder="client@example.com, second@example.com"><?= ui_e($editor_config['client_email'] ?? '') ?></textarea>
+                        <small>Use commas, spaces, or new lines for multiple recipients.</small>
+                    </label>
                 </div>
                 <div class="signature-actions">
                     <h3>Signature and seal</h3>
