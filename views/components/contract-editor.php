@@ -37,6 +37,7 @@ $jsConfig = [
     'printPdfUrl' => $isNew ? null : $base . '/contracts/' . $contractId . '/print-pdf',
     'uploadSignedUrl' => $isNew ? null : $base . '/api/contracts/' . $contractId . '/upload-hard-copy',
     'signUrl' => $isNew ? null : $base . '/contracts/' . $contractId . '/sign-digitally',
+    'companySigningUrl' => $isNew ? null : $base . '/contracts/sign-company/' . $contractId,
     'sealUrl' => $isNew ? null : $base . '/api/contracts/' . $contractId . '/seal',
     'finalPdfUrl' => $isNew ? null : $base . '/contracts/final-pdf/' . $contractId,
     'distributeUrl' => $isNew ? null : $base . '/api/contracts/' . $contractId . '/distribute',
@@ -180,6 +181,7 @@ $jsConfig = [
                     <div class="phase-action-grid">
                         <button id="submitForSigning" class="primary-action" type="button" <?= $isNew ? 'disabled' : '' ?>>Submit for signing</button>
                         <button id="openSigningChoice" class="secondary-action" type="button" <?= $isNew ? 'disabled' : '' ?>>Client path</button>
+                        <a id="companySigningAction" class="secondary-action disabled" href="<?= ui_e($jsConfig['companySigningUrl'] ?? '#') ?>" aria-disabled="true">Company sign & seal</a>
                     </div>
                     <label class="recipient-field" for="clientEmails">
                         <span>Client recipient emails</span>

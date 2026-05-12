@@ -14,6 +14,7 @@
     const signingModal = document.getElementById('signingModal');
     const openSigningChoice = document.getElementById('openSigningChoice');
     const submitForSigning = document.getElementById('submitForSigning');
+    const companySigningAction = document.getElementById('companySigningAction');
     const closeSigningModal = document.getElementById('closeSigningModal');
     const phaseInstruction = document.getElementById('phaseInstruction');
     const signingMessage = document.getElementById('signingMessage');
@@ -238,6 +239,10 @@
 
         if (submitForSigning) submitForSigning.disabled = !canSubmit;
         if (openSigningChoice) openSigningChoice.disabled = !(canSubmit || canSign);
+        if (companySigningAction) {
+            companySigningAction.classList.toggle('disabled', !canSeal);
+            companySigningAction.setAttribute('aria-disabled', canSeal ? 'false' : 'true');
+        }
 
         if (signatureAction) {
             signatureAction.classList.toggle('disabled', !canSign);
@@ -768,7 +773,7 @@
     openSigningChoice?.addEventListener('click', () => setModalOpen(true));
     submitForSigning?.addEventListener('click', submitDraftForSigning);
     closeSigningModal?.addEventListener('click', () => setModalOpen(false));
-    [signatureAction, sealAction, finalPdfPreview].forEach((link) => {
+    [signatureAction, sealAction, companySigningAction, finalPdfPreview].forEach((link) => {
         link?.addEventListener('click', (event) => {
             if (link.getAttribute('aria-disabled') === 'true') {
                 event.preventDefault();
