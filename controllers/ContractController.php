@@ -1033,7 +1033,7 @@ private function findLibreOfficeBinary(): ?string
 }
     
 
-    public function generatePrintPDF($id)
+public function generatePrintPDF($id)
 {
     $this->outputGeneratedContractPdf((int) $id, 'inline', 'contract_' . (int) $id . '.pdf');
 }
