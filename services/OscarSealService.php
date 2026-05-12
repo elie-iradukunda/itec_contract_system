@@ -309,6 +309,7 @@ class OscarSealService
 
             $pdf->setPrintHeader(false);
             $pdf->setPrintFooter(false);
+            $pdf->SetAutoPageBreak(false, 0);
 
             $pageCount = $pdf->setSourceFile($inputPdf);
 

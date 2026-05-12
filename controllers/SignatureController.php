@@ -143,6 +143,7 @@ class SignatureController extends Controller
             $approver = 'company@itec.com';
         }
 
+        $sealSourcePdf = null;
         try {
             $stmt = $this->db->prepare("SELECT signing_state FROM contracts WHERE id = ?");
             $stmt->execute([(int) $contractId]);
@@ -166,14 +167,21 @@ class SignatureController extends Controller
                 return;
             }
 
-            $result = (new \Services\OscarSealService())->applySeal((int) $contractId, $approver);
+            $sealSourcePdf = $this->generateSealSourcePdf((int) $contractId);
+            $result = (new \Services\OscarSealService())->applySeal((int) $contractId, $approver, $sealSourcePdf);
             if (isset($stateResult)) {
                 $result = array_merge($stateResult, $result);
             }
 
+            $this->cleanupGeneratedSealSource($sealSourcePdf);
+            $sealSourcePdf = null;
             $this->json($result, !empty($result['success']) ? 200 : 500);
         } catch (\Throwable $error) {
+            $this->cleanupGeneratedSealSource($sealSourcePdf);
+            $sealSourcePdf = null;
             $this->json(['success' => false, 'error' => $error->getMessage()], 500);
+        } finally {
+            $this->cleanupGeneratedSealSource($sealSourcePdf);
         }
     }
 
@@ -374,6 +382,30 @@ class SignatureController extends Controller
         $stmt->execute([(int) $contractId]);
 
         return $stmt->fetchAll() ?: [];
+    }
+
+    private function generateSealSourcePdf($contractId)
+    {
+        $contract = (new Contract())->getEditorData((int) $contractId);
+        if (!$contract) {
+            throw new \Exception('Contract not found');
+        }
+
+        $signatures = $this->getSignaturesForPreview((int) $contractId);
+        $pdfPath = (new DocumentGeneratorService())->generateContractPdf((int) $contractId, $contract, $signatures);
+
+        if (!$pdfPath || !is_file($pdfPath)) {
+            throw new \Exception('Failed to generate current contract PDF for sealing');
+        }
+
+        return $pdfPath;
+    }
+
+    private function cleanupGeneratedSealSource($path)
+    {
+        if ($path && is_file($path) && preg_match('/contract_review_[^\/\\\\]+\.pdf$/', (string) $path)) {
+            @unlink($path);
+        }
     }
 
     private function savePreviewSignatureImage($dataUrl)

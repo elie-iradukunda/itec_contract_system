@@ -37,6 +37,7 @@ $jsConfig = [
     'printPdfUrl' => $isNew ? null : $base . '/contracts/' . $contractId . '/print-pdf',
     'uploadSignedUrl' => $isNew ? null : $base . '/api/contracts/' . $contractId . '/upload-hard-copy',
     'signUrl' => $isNew ? null : $base . '/contracts/' . $contractId . '/sign-digitally',
+    'companySigningUrl' => $isNew ? null : $base . '/contracts/sign-company/' . $contractId,
     'sealUrl' => $isNew ? null : $base . '/api/contracts/' . $contractId . '/seal',
     'finalPdfUrl' => $isNew ? null : $base . '/contracts/final-pdf/' . $contractId,
     'distributeUrl' => $isNew ? null : $base . '/api/contracts/' . $contractId . '/distribute',
