@@ -5,12 +5,9 @@ $headerMeta = 'company seal application';
 $showPageHeader = false;
 $pageStyles = [
     BASE_URL . '/public/assets/css/contract-editor.css',
-    'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css'
+    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
 ];
-$pageScripts = [
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js',
-    BASE_URL . '/public/assets/js/company-seal.js',
-];
+$pageScripts = [];
 
 ob_start();
 
@@ -21,10 +18,9 @@ $clientEmail = $contract['client_email'] ?? 'N/A';
 $currentState = $contract['signing_state'] ?? 'AWAITING_COMPANY';
 $isReadOnly = ($currentState !== 'AWAITING_COMPANY');
 
-// Get contract file path for PDF preview
-$contractFile = $contract['file_path'] ?? '';
-$pdfUrl = !empty($contractFile) ? BASE_URL . '/' . $contractFile : '';
-$pdfExists = !empty($contractFile) && file_exists(__DIR__ . '/../' . $contractFile);
+// Preview the generated execution PDF instead of trying to load a DOCX in PDF.js.
+$pdfUrl = BASE_URL . '/contracts/' . (int) $contractId . '/print-pdf';
+$pdfExists = (int) $contractId > 0;
 
 // Get ULID approval code from session or generate new
 $approvalCode = $_SESSION['approval_code'] ?? 'ULID_' . strtoupper(uniqid());
@@ -185,14 +181,17 @@ $_SESSION['approval_code'] = $approvalCode;
     </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 <script>
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+}
 
 let pdfDoc = null;
 let currentPage = 1;
 let scale = 1.5;
-let pdfUrl = '<?= $pdfUrl ?>';
-let pdfExists = <?= $pdfExists ? 'true' : 'false' ?>;
+let pdfUrl = <?= json_encode($pdfUrl) ?>;
+let pdfExists = <?= json_encode((bool) $pdfExists) ?>;
 
 const canvas = document.getElementById('pdf-canvas');
 const ctx = canvas.getContext('2d');
@@ -235,6 +234,14 @@ function renderPage() {
 }
 
 function loadPDF() {
+    if (!window.pdfjsLib) {
+        loadingDiv.classList.add('d-none');
+        errorDiv.classList.remove('d-none');
+        errorMessage.textContent = 'PDF preview library could not be loaded.';
+        canvas.style.display = 'none';
+        return;
+    }
+
     if (!pdfExists) {
         loadingDiv.classList.add('d-none');
         errorDiv.classList.remove('d-none');
@@ -289,21 +296,28 @@ function resetZoom() {
 }
 
 // Update preview when approver name changes
-approverInput.addEventListener('input', function() {
-    previewApprover.textContent = this.value;
-});
+if (approverInput && previewApprover) {
+    approverInput.addEventListener('input', function() {
+        previewApprover.textContent = this.value;
+    });
+}
 
 // Enable seal button when checkbox is checked
-confirmCheckbox.addEventListener('change', function() {
-    applySealBtn.disabled = !this.checked;
-});
+if (confirmCheckbox && applySealBtn) {
+    confirmCheckbox.addEventListener('change', function() {
+        applySealBtn.disabled = !this.checked;
+    });
+}
 
 // Update preview date every second
-setInterval(() => {
-    previewDate.textContent = new Date().toLocaleString();
-}, 1000);
+if (previewDate) {
+    setInterval(() => {
+        previewDate.textContent = new Date().toLocaleString();
+    }, 1000);
+}
 
 // Apply Seal
+if (applySealBtn) {
 applySealBtn.addEventListener('click', async function() {
     const approverName = approverInput.value;
     
@@ -319,6 +333,7 @@ applySealBtn.addEventListener('click', async function() {
         const response = await fetch('<?= BASE_URL ?>/api/contracts/<?= $contractId ?>/seal', {
             method: 'POST',
             headers: {
+                'Accept': 'application/json',
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -341,6 +356,7 @@ applySealBtn.addEventListener('click', async function() {
         applySealBtn.innerHTML = '<i class="fas fa-stamp me-2"></i> Apply Company Seal & Finalize';
     }
 });
+}
 
 // Event Listeners
 prevBtn.addEventListener('click', prevPage);

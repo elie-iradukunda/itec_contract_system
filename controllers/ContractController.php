@@ -77,6 +77,10 @@ class ContractController extends Controller
     }
     public function signSuccessPage($id)
         {
+            if (session_status() === PHP_SESSION_NONE) {
+                @session_start();
+            }
+
             unset($_SESSION['signing_authorized']);
             unset($_SESSION['signing_contract_id']);
             
@@ -97,6 +101,25 @@ class ContractController extends Controller
         $contract = $this->contractService->getEditorData((int) $id);
         $signatures = $this->getSignaturesForContract((int) $id);
         $this->view('contracts/readonly', ['contract_id' => (int) $id, 'contract' => $contract, 'signatures' => $signatures, 'title' => 'Read Only Contract']);
+    }
+
+    public function companySeal($id)
+    {
+        if (session_status() === PHP_SESSION_NONE) {
+            @session_start();
+        }
+
+        $contract = $this->contractService->getEditorData((int) $id);
+        if (!$contract) {
+            $this->view('errors/404', ['message' => 'Contract not found']);
+            return;
+        }
+
+        $this->view('contracts/company-seal', [
+            'contract_id' => (int) $id,
+            'contract' => $contract,
+            'title' => 'Company Seal',
+        ]);
     }
 
     public function viewFinal($id)

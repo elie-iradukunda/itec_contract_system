@@ -176,7 +176,10 @@ class SignatureController extends Controller
     public function applySeal($contractId)
     {
         $input = json_decode(file_get_contents('php://input'), true) ?: [];
-        $approver = $input['signer_id'] ?? $_POST['signer_id'] ?? $_POST['approver_name'] ?? 'company@itec.com';
+        $approver = trim((string) ($input['signer_id'] ?? $input['approver_name'] ?? $_POST['signer_id'] ?? $_POST['approver_name'] ?? 'company@itec.com'));
+        if ($approver === '') {
+            $approver = 'company@itec.com';
+        }
 
         try {
             $stmt = $this->db->prepare("SELECT signing_state FROM contracts WHERE id = ?");

@@ -72,7 +72,7 @@ $router->get('/contracts/{id}/signing-choice', [\Controllers\SignatureController
 $router->post('/contracts/{id}/signing-choice', [\Controllers\SignatureController::class, 'handleChoice']);
 $router->get('/contracts/{id}/sign-digitally', [\Controllers\SignatureController::class, 'signPage']);
 $router->get('/contracts/sign/{id}', [\Controllers\SignatureController::class, 'signPage']);
-$router->get('/contracts/sign-company/{id}', [\Controllers\ContractController::class, 'readonly']);
+$router->get('/contracts/sign-company/{id}', [\Controllers\ContractController::class, 'companySeal']);
 $router->get('/contracts/{id}/print-pdf', [\Controllers\ContractController::class, 'generatePrintPDF']);
 $router->post('/contracts/{id}/upload-signed-copy', [\Controllers\UploadController::class, 'uploadSignedCopy']);
 $router->get('/contracts/{id}/upload-hard-copy', [\Controllers\UploadController::class, 'uploadHardCopyPage']);
