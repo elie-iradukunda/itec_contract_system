@@ -87,26 +87,40 @@ class UploadController extends Controller
         ]);
     }
 
-    private function respond(array $payload, $status = 200, $contractId = 0)
-    {
-        // Browser forms redirect back to the editor; AJAX/API callers receive JSON.
-        $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
-        if (stripos($accept, 'application/json') !== false || str_starts_with($_SERVER['REQUEST_URI'] ?? '', BASE_URL . '/api/')) {
-            $this->json($payload, $status);
-        }
-
-        if (session_status() === PHP_SESSION_NONE) {
-            @session_start();
-        }
-
-        $isClientSigningSession = isset($_SESSION['signing_authorized'])
-            && $_SESSION['signing_authorized'] === true
-            && (int) ($_SESSION['signing_contract_id'] ?? 0) === (int) $contractId;
-
-        $target = $isClientSigningSession
-            ? BASE_URL . '/sign/' . (int) $contractId . '?signed=hard_copy'
-            : ($contractId ? BASE_URL . '/contracts/' . (int) $contractId . '/editor#signing' : BASE_URL . '/contracts');
-        header('Location: ' . $target);
-        exit;
+   private function respond(array $payload, $status = 200, $contractId = 0)
+{
+    // AJAX/API callers receive JSON
+    $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
+    if (stripos($accept, 'application/json') !== false || str_starts_with($_SERVER['REQUEST_URI'] ?? '', BASE_URL . '/api/')) {
+        $this->json($payload, $status);
+        return;
     }
+
+    if (session_status() === PHP_SESSION_NONE) {
+        @session_start();
+    }
+
+    $isClientSigningSession = isset($_SESSION['signing_authorized'])
+        && $_SESSION['signing_authorized'] === true
+        && (int) ($_SESSION['signing_contract_id'] ?? 0) === (int) $contractId;
+
+    // Determine redirect target
+    if ($isClientSigningSession) {
+        // Client who uploaded a hard copy goes to success page
+        $target = BASE_URL . '/sign/success/' . (int) $contractId;
+    } else {
+        // Staff/Admin goes back to editor
+        $target = $contractId ? BASE_URL . '/contracts/' . (int) $contractId . '/editor#signing' : BASE_URL . '/contracts';
+    }
+    
+    // Store message in session for display
+    if ($payload['success']) {
+        $_SESSION['upload_success'] = $payload['message'];
+    } else {
+        $_SESSION['upload_error'] = $payload['message'];
+    }
+    
+    header('Location: ' . $target);
+    exit;
+}
 }
