@@ -22,120 +22,82 @@ class SignatureController extends Controller
 
     // POST /api/contracts/{id}/sign
     public function sign($contractId)
-    {
-        // Get role from POST body
-        $input = json_decode(file_get_contents('php://input'), true);
-        $role = $input['role'] ?? $_POST['role'] ?? null;
-        $signerId = $input['signer_id'] ?? $_POST['signer_id'] ?? null;
-        
-        // Validate role
-        if (!$role || !in_array($role, ['client', 'company_rep'])) {
-            $this->json(['success' => false, 'error' => 'Invalid or missing role. Must be "client" or "company_rep"'], 400);
-            return;
-        }
-        
-        if (!$signerId) {
-            $this->json(['success' => false, 'error' => 'Missing signer_id'], 400);
-            return;
-        }
-
-        if ($role === 'client') {
-            if (session_status() === PHP_SESSION_NONE) {
-                @session_start();
-            }
-
-            if (
-                !isset($_SESSION['signing_authorized']) ||
-                $_SESSION['signing_authorized'] !== true ||
-                (int) ($_SESSION['signing_contract_id'] ?? 0) !== (int) $contractId
-            ) {
-                $this->json(['success' => false, 'error' => 'This signing session is not authorized. Please use the secure email link.'], 403);
-                return;
-            }
-        }
-        
-        // Get contract file path
-        $stmt = $this->db->prepare("SELECT id, file_path, signing_state FROM contracts WHERE id = ?");
-        $stmt->execute([$contractId]);
-        $contract = $stmt->fetch();
-        $file_path = $contract['file_path'] ?? null;
-        
-        if (!$contract) {
-            $this->json(['success' => false, 'error' => 'Contract not found'], 404);
-            return;
-        }
-        
-        $filePath = $this->resolvePath($file_path);
-        if (!$filePath || !file_exists($filePath)) {
-            $this->json(['success' => false, 'error' => 'Contract file not found', 'path' => $file_path], 404);
-            return;
-        }
-        
-        // Check if contract is in correct state for signing
-        $currentState = $contract['signing_state'];
-        
-        if ($role === 'client' && $currentState !== 'AWAITING_CLIENT') {
-            $this->json(['success' => false, 'error' => "Client cannot sign. Current state: {$currentState}. Expected: AWAITING_CLIENT"], 400);
-            return;
-        }
-        
-        if ($role === 'company_rep' && $currentState !== 'AWAITING_COMPANY') {
-            $this->json(['success' => false, 'error' => "Company cannot sign. Current state: {$currentState}. Expected: AWAITING_COMPANY"], 400);
-            return;
-        }
-        
-        // Sign the document
-        $result = $this->signatureService->signDocument($contractId, $signerId, $role, $filePath);
-        
-        if ($result['success']) {
-            if ($role === 'client') {
-                $this->rememberClientSigningDetails(
-                    (int) $contractId,
-                    trim((string) ($_POST['typed_signature'] ?? $input['typed_signature'] ?? '')),
-                    trim((string) $signerId)
-                );
-            }
-
-            // If a visual signature (base64 image) was sent, save it linked to the signature record
-            $visualPath = null;
-            $signatureData = $_POST['signature_data'] ?? null;
-            if ($signatureData) {
-                try {
-                    $visualPath = $this->signatureService->saveVisualSignature((int)$contractId, $signerId, $signatureData, $result['signature_id']);
-                } catch (\Throwable $e) {
-                    // Non-fatal: log and continue (signature still valid cryptographically)
-                    error_log('Failed to save visual signature: ' . $e->getMessage());
-                }
-            }
-
-            // Update contract state after successful signature
-            $stateMachine = new OscarStateMachineService($contractId);
-            
-            if ($role === 'client') {
-                $stateResult = $stateMachine->clientSign($signerId, $result['doc_hash']);
-                $stateMachine = new OscarStateMachineService($contractId);
-                $stateMachine->escalateToCompany('system');
-                $stateResult['new_state'] = 'AWAITING_COMPANY';
-            } else {
-                $stateResult = $stateMachine->companySign($signerId, $result['doc_hash']);
-            }
-            
-            $response = [
-                'success' => true,
-                'signature_id' => $result['signature_id'],
-                'doc_hash' => $result['doc_hash'],
-                'new_state' => $stateResult['new_state'] ?? null,
-                'message' => $role === 'client' ? 'Document signed by client successfully' : 'Document signed by company successfully'
-            ];
-            if (!empty($visualPath)) {
-                $response['visual_signature'] = $visualPath;
-            }
-
-            $this->json($response);
-        } else {
-            $this->json(['success' => false, 'error' => $result['error']], 500);
-        }
+{
+    // Get role from POST body
+    $input = json_decode(file_get_contents('php://input'), true);
+    $role = $input['role'] ?? $_POST['role'] ?? null;
+    $signerId = $input['signer_id'] ?? $_POST['signer_id'] ?? null;
+    
+    // Validate role
+    if (!$role || !in_array($role, ['client', 'company_rep'])) {
+        $this->json(['success' => false, 'error' => 'Invalid or missing role. Must be "client" or "company_rep"'], 400);
+        return;
     }
+    
+    if (!$signerId) {
+        $this->json(['success' => false, 'error' => 'Missing signer_id'], 400);
+        return;
+    }
+    
+    // Get contract details
+    $stmt = $this->db->prepare("SELECT id, file_path, signing_state FROM contracts WHERE id = ?");
+    $stmt->execute([$contractId]);
+    $contract = $stmt->fetch();
+    
+    if (!$contract) {
+        $this->json(['success' => false, 'error' => 'Contract not found'], 404);
+        return;
+    }
+    
+    $filePath = $contract['file_path'];
+    if (!file_exists($filePath)) {
+        $this->json(['success' => false, 'error' => 'Contract file not found'], 404);
+        return;
+    }
+    
+    // Check if contract is in correct state for signing
+    $currentState = $contract['signing_state'];
+    
+    if ($role === 'client' && $currentState !== 'AWAITING_CLIENT') {
+        $this->json(['success' => false, 'error' => "Client cannot sign. Current state: {$currentState}. Expected: AWAITING_CLIENT"], 400);
+        return;
+    }
+    
+    if ($role === 'company_rep' && $currentState !== 'AWAITING_COMPANY') {
+        $this->json(['success' => false, 'error' => "Company cannot sign. Current state: {$currentState}. Expected: AWAITING_COMPANY"], 400);
+        return;
+    }
+    
+    // Sign the document (OpenSSL)
+    $result = $this->signatureService->signDocument($contractId, $signerId, $role, $filePath);
+    
+    if (!$result['success']) {
+        $this->json(['success' => false, 'error' => $result['error']], 500);
+        return;
+    }
+    
+    // Update contract state
+    $stateMachine = new OscarStateMachineService($contractId);
+    
+    if ($role === 'client') {
+        $stateMachine->clientSign($signerId, $result['doc_hash']);
+        $stateMachine->escalateToCompany('system');
+        $newState = 'AWAITING_COMPANY';
+        $message = 'Document signed by client successfully';
+    } else {
+        $stateMachine->companySign($signerId, $result['doc_hash']);
+        $newState = 'FULLY_SIGNED';
+        $message = 'Document signed by company successfully';
+    }
+    
+    $this->json([
+        'success' => true,
+        'signature_id' => $result['signature_id'],
+        'doc_hash' => $result['doc_hash'],
+        'new_state' => $newState,
+        'message' => $message
+    ]);
+}
 
     // GET /api/contracts/{id}/verify
     public function verify($contractId)
@@ -245,9 +207,7 @@ class SignatureController extends Controller
 
     public function signPage($contractId = null)
     {
-        if (session_status() === PHP_SESSION_NONE) {
-            @session_start();
-        }
+       
 
         $contractId = (int) ($contractId ?: 1);
         $stmt = $this->db->prepare("SELECT id, title, client_name, client_email, signing_state FROM contracts WHERE id = ?");
