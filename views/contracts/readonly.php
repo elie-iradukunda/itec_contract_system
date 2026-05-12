@@ -1,219 +1,271 @@
 <?php
 require_once dirname(__DIR__) . '/components/ui.php';
 
+if (!function_exists('readonly_file_url')) {
+    function readonly_project_path($path)
+    {
+        $path = str_replace('\\', '/', (string) $path);
+        if ($path === '') {
+            return '';
+        }
+
+        if (preg_match('/^[A-Za-z]:\//', $path) || str_starts_with($path, '/')) {
+            return $path;
+        }
+
+        return str_replace('\\', '/', dirname(__DIR__, 2)) . '/' . ltrim($path, '/');
+    }
+
+    function readonly_file_url($path)
+    {
+        $path = readonly_project_path($path);
+        if ($path === '') {
+            return '';
+        }
+
+        $root = str_replace('\\', '/', dirname(__DIR__, 2)) . '/';
+        $real = str_replace('\\', '/', realpath($path) ?: $path);
+        if (str_starts_with($real, $root)) {
+            return BASE_URL . '/' . ltrim(substr($real, strlen($root)), '/');
+        }
+
+        return BASE_URL . '/' . ltrim($path, '/');
+    }
+}
+
+if (!function_exists('readonly_format_date')) {
+    function readonly_format_date($value)
+    {
+        return !empty($value) ? date('M d, Y @ H:i', strtotime($value)) : 'Not recorded';
+    }
+}
+
+if (!function_exists('readonly_latest_file')) {
+    function readonly_latest_file($pattern)
+    {
+        $files = glob($pattern) ?: [];
+        usort($files, function ($a, $b) {
+            return filemtime($b) <=> filemtime($a);
+        });
+
+        return $files[0] ?? null;
+    }
+}
+
+$contract = $contract ?? [];
+$signatures = $signatures ?? [];
 $contractId = (int) ($contract_id ?? ($contract['id'] ?? 1));
 $state = strtoupper($contract['signing_state'] ?? 'DRAFT');
-$title = 'Read Only Contract';
+$isFinal = $state === 'FULLY_SIGNED';
+$isAwaitingCompany = $state === 'AWAITING_COMPANY';
+$clientName = $contract['client_name'] ?? $contract['company_name'] ?? 'Client pending';
+$clientEmail = $contract['client_email'] ?? $contract['email'] ?? 'Not provided';
+$documentType = $contract['document_type'] ?? $contract['type'] ?? 'Contract';
+$createdBy = $contract['created_by_name'] ?? $contract['created_by'] ?? 'System';
+$createdAt = readonly_format_date($contract['created_at'] ?? null);
+$updatedAt = readonly_format_date($contract['updated_at'] ?? null);
+$finalPdfUrl = BASE_URL . '/contracts/final-pdf/' . $contractId;
+$companySignUrl = BASE_URL . '/contracts/sign-company/' . $contractId;
+$distributionUrl = BASE_URL . '/contracts/' . $contractId . '/editor#distribution';
+$detailsUrl = BASE_URL . '/contracts/show/' . $contractId;
+$auditUrl = BASE_URL . '/contracts/audit-trail/' . $contractId;
+$sealedPath = readonly_latest_file(dirname(__DIR__, 2) . '/storage/contracts/' . $contractId . '/sealed_*.pdf');
+$sealedUrl = $sealedPath ? readonly_file_url($sealedPath) : '';
+
+$clientSignature = null;
+$companySignature = null;
+foreach ($signatures as $signature) {
+    if (($signature['signer_role'] ?? '') === 'client') {
+        $clientSignature = $signature;
+    }
+    if (($signature['signer_role'] ?? '') === 'company_rep') {
+        $companySignature = $signature;
+    }
+}
+
+$title = 'Final Contract';
 $activeNav = 'contracts';
-$headerMeta = 'execution workspace';
-$pageTitle = 'Read Only Contract';
+$headerMeta = $isFinal ? 'final execution packet' : 'execution workspace';
+$pageTitle = 'Final Contract';
 $pageHeading = $contract['title'] ?? 'Read-Only Execution View';
-$pageEyebrow = 'body lock enforced';
-$pageLead = 'Review the locked document and complete company execution, sealing, or final distribution.';
+$pageEyebrow = $isFinal ? 'fully signed contract' : 'body lock enforced';
+$pageLead = $isFinal
+    ? 'Review the completed contract details, signatures, sealed copy, and final distribution actions.'
+    : 'Review the locked contract and continue with the next execution action.';
+
 $pageActions = [
-    '<a class="button ghost" href="' . BASE_URL . '/contracts/show/' . $contractId . '">Contract Details</a>',
-    '<a class="button success" href="' . BASE_URL . '/contracts/' . $contractId . '/editor#signing">Company Actions</a>',
+    '<a class="button ghost" href="' . $detailsUrl . '">' . ui_icon('file-text') . ' Contract Details</a>',
+    '<a class="button ghost" href="' . $finalPdfUrl . '" target="_blank" rel="noopener">' . ui_icon('file-earmark-pdf') . ' Generated PDF</a>',
 ];
+if ($sealedUrl) {
+    $pageActions[] = '<a class="button success" href="' . $sealedUrl . '" target="_blank" rel="noopener">' . ui_icon('patch-check') . ' Sealed Copy</a>';
+} elseif ($isAwaitingCompany) {
+    $pageActions[] = '<a class="button success" href="' . $companySignUrl . '">' . ui_icon('building-check') . ' Company Sign & Seal</a>';
+}
 
 ob_start();
 ?>
-<section class="notice-banner warn">
-    <strong>Body lock active</strong>
+<style>
+    .final-contract-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, .75fr); gap: 20px; align-items: start; }
+    .final-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 20px; }
+    .final-summary-card { min-height: 112px; display: grid; align-content: start; gap: 8px; padding: 16px; }
+    .final-summary-card span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 4px; color: #2f70f2; background: #eaf1ff; }
+    .final-summary-card strong { color: #183655; font-size: 15px; }
+    .final-summary-card small { color: #657086; line-height: 1.45; }
+    .contract-detail-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .contract-detail-list div { min-height: 64px; padding: 12px; border: 1px solid #edf1f6; border-radius: 4px; background: #fbfcfe; }
+    .contract-detail-list span { display: block; color: #8a94a6; font-size: 12px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; }
+    .contract-detail-list strong { display: block; margin-top: 5px; color: #183655; line-height: 1.4; overflow-wrap: anywhere; }
+    .final-section-head { display: flex; justify-content: space-between; gap: 14px; align-items: start; padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid #edf1f6; }
+    .final-section-head h2, .final-section-head h3 { margin: 0; color: #183655; }
+    .final-section-head small { color: #657086; }
+    .final-document-card { padding: 22px; }
+    .readonly-document { color: #20344f; line-height: 1.68; }
+    .readonly-document h1, .readonly-document h2, .readonly-document h3 { color: #183655; }
+    .readonly-document p { margin: 0 0 14px; }
+    .signature-list { display: grid; gap: 12px; }
+    .signature-card { display: grid; gap: 10px; padding: 14px; border: 1px solid #edf1f6; border-left: 4px solid #117d71; border-radius: 4px; background: #fff; }
+    .signature-card-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+    .signature-card strong { color: #183655; }
+    .signature-card span, .signature-card small { color: #657086; overflow-wrap: anywhere; }
+    .signature-image { max-width: 180px; max-height: 62px; object-fit: contain; padding: 6px; border: 1px solid #edf1f6; border-radius: 4px; background: #fbfcfe; }
+    .final-actions { display: grid; gap: 10px; }
+    .final-actions .button { width: 100%; }
+    .final-state-banner { margin-bottom: 20px; }
+    @media (max-width: 1100px) {
+        .final-contract-grid, .final-summary-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 760px) {
+        .final-contract-grid, .final-summary-grid, .contract-detail-list { grid-template-columns: 1fr; }
+        .final-section-head, .signature-card-head { flex-direction: column; }
+    }
+</style>
+
+<section class="notice-banner <?= $isFinal ? 'success' : 'warn' ?> final-state-banner">
+    <strong><?= $isFinal ? 'Final contract ready' : 'Body lock active' ?></strong>
     <span>Current state: <?= ui_e(ui_status_label($state)) ?>. Contract body changes are disabled.</span>
 </section>
 
-<section class="content-split">
-    <div class="surface doc-preview">
-        <h3><?= ui_e($contract['title'] ?? 'Protected document body') ?></h3>
-        <div class="readonly-document">
-            <?= $contract['content'] ?? '<p>Contract content is not available.</p>' ?>
-        </div>
+<section class="final-summary-grid">
+    <article class="surface final-summary-card">
+        <span><?= ui_icon($isFinal ? 'check-circle' : 'lock-fill') ?></span>
+        <strong><?= ui_e(ui_status_label($state)) ?></strong>
+        <small><?= $isFinal ? 'Both parties have signed and the contract is ready for final distribution.' : 'The body is locked while execution continues.' ?></small>
+    </article>
+    <article class="surface final-summary-card">
+        <span><?= ui_icon('person-badge') ?></span>
+        <strong><?= ui_e($clientName) ?></strong>
+        <small><?= ui_e($clientEmail) ?></small>
+    </article>
+    <article class="surface final-summary-card">
+        <span><?= ui_icon('pen') ?></span>
+        <strong><?= $clientSignature ? 'Client signed' : 'Client pending' ?></strong>
+        <small><?= $clientSignature ? ui_e(readonly_format_date($clientSignature['signed_at'] ?? null)) : 'No client signature recorded yet.' ?></small>
+    </article>
+    <article class="surface final-summary-card">
+        <span><?= ui_icon('patch-check') ?></span>
+        <strong><?= $companySignature ? 'Company signed' : 'Company pending' ?></strong>
+        <small><?= $sealedUrl ? 'Sealed PDF copy is available.' : ($isAwaitingCompany ? 'Company seal step is ready.' : 'Seal copy not found yet.') ?></small>
+    </article>
+</section>
+
+<section class="final-contract-grid">
+    <div class="page-stack">
+        <article class="surface surface-pad">
+            <div class="final-section-head">
+                <div>
+                    <small>contract record</small>
+                    <h2>Full Contract Details</h2>
+                </div>
+                <span class="status-pill <?= ui_status_class($state) ?>"><?= ui_e(ui_status_label($state)) ?></span>
+            </div>
+            <div class="contract-detail-list">
+                <div><span>Contract ID</span><strong>#<?= $contractId ?></strong></div>
+                <div><span>Document Type</span><strong><?= ui_e($documentType) ?></strong></div>
+                <div><span>Client Name</span><strong><?= ui_e($clientName) ?></strong></div>
+                <div><span>Client Email</span><strong><?= ui_e($clientEmail) ?></strong></div>
+                <div><span>Created By</span><strong><?= ui_e($createdBy) ?></strong></div>
+                <div><span>Created</span><strong><?= ui_e($createdAt) ?></strong></div>
+                <div><span>Last Updated</span><strong><?= ui_e($updatedAt) ?></strong></div>
+                <div><span>Sealed Copy</span><strong><?= $sealedUrl ? 'Available' : 'Not generated yet' ?></strong></div>
+            </div>
+        </article>
+
+        <article class="surface final-document-card">
+            <div class="final-section-head">
+                <div>
+                    <small>locked document body</small>
+                    <h2><?= ui_e($contract['title'] ?? 'Protected document body') ?></h2>
+                </div>
+            </div>
+            <div class="readonly-document">
+                <?= $contract['content'] ?? '<p>Contract content is not available.</p>' ?>
+            </div>
+        </article>
     </div>
 
-    <div class="page-stack">
-        <!-- SIGNATURE BLOCK - PROMINENT DISPLAY -->
-        <div class="surface surface-pad" style="background: #f5f5f5; border: 2px solid #007bff;">
-            <h2 style="margin-bottom: 15px; color: #0056b3;">Document Signatures</h2>
+    <aside class="page-stack">
+        <article class="surface surface-pad">
+            <div class="final-section-head">
+                <div>
+                    <small>execution evidence</small>
+                    <h2>Document Signatures</h2>
+                </div>
+            </div>
             <?php if (!empty($signatures)): ?>
-                <div style="display: grid; gap: 12px;">
+                <div class="signature-list">
                     <?php foreach ($signatures as $sig): ?>
-                        <div style="background: white; border-left: 4px solid #28a745; padding: 12px; border-radius: 4px;">
-                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <?php
+                            $role = ucfirst(str_replace('_', ' ', $sig['signer_role'] ?? 'Signer'));
+                            $visualUrl = '';
+                            $visualPath = $sig['signature_file_path'] ?? '';
+                            if ($visualPath && preg_match('/\.(png|jpe?g)$/i', $visualPath) && is_file(readonly_project_path($visualPath))) {
+                                $visualUrl = readonly_file_url($visualPath);
+                            }
+                        ?>
+                        <div class="signature-card">
+                            <div class="signature-card-head">
                                 <div>
-                                    <strong style="display: block; margin-bottom: 4px; text-transform: capitalize; color: #0056b3;">
-                                        <?= ucfirst(str_replace('_', ' ', $sig['signer_role'])) ?>
-                                    </strong>
-                                    <span style="color: #666; font-size: 0.9rem;">Signed by: <?= htmlspecialchars($sig['signer_id']) ?></span>
+                                    <strong><?= ui_e($role) ?></strong>
+                                    <span>Signed by: <?= ui_e($sig['signer_id'] ?? 'Unknown signer') ?></span>
                                 </div>
-                                <span style="color: #666; font-size: 0.85rem; white-space: nowrap;">
-                                    ✓ <?= date('M d, Y @ H:i', strtotime($sig['signed_at'])) ?>
-                                </span>
+                                <small><?= ui_e(readonly_format_date($sig['signed_at'] ?? null)) ?></small>
                             </div>
+                            <?php if ($visualUrl): ?>
+                                <img class="signature-image" src="<?= ui_e($visualUrl) ?>" alt="<?= ui_e($role) ?> signature">
+                            <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
                 </div>
             <?php else: ?>
-                <div style="padding: 15px; background: #fff3cd; border-radius: 4px; color: #856404;">
-                    <p style="margin: 0; font-style: italic;">⚠️ No signatures yet. Signatures will appear here after parties sign the contract.</p>
-                </div>
+                <p class="muted-copy">No signatures have been recorded for this contract yet.</p>
             <?php endif; ?>
-        </div>
+        </article>
 
-        <!-- COMPANY SIGNATURE ACTION -->
-        <div class="surface surface-pad" style="border: 2px solid #28a745; background: #f0f8f0;">
-            <h3 style="color: #28a745; margin-bottom: 12px;">✎ Company Representative Sign</h3>
-            <p style="color: #555; margin-bottom: 15px;">Sign digitally to apply your signature and company seal:</p>
-            <form id="companySignForm" method="POST" action="<?= BASE_URL ?>/api/contracts/<?= $contractId ?>/sign" style="display: grid; gap: 12px;">
-                <input type="hidden" name="role" value="company_rep">
-                
-                <label style="display: grid; gap: 5px;">
-                    <span style="font-weight: bold; color: #333;">Your email:</span>
-                    <input type="email" name="signer_id" value="admin@itec.com" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;" required>
-                </label>
-                
-                <label style="display: grid; gap: 5px;">
-                    <span style="font-weight: bold; color: #333;">Your full name:</span>
-                    <input type="text" name="typed_signature" placeholder="Full legal name" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;" required>
-                </label>
-                
-                <!-- SIGNATURE CANVAS -->
-                <div style="display: grid; gap: 8px;">
-                    <span style="font-weight: bold; color: #333;">Draw your signature:</span>
-                    <canvas id="companySignaturePad" width="500" height="120" style="border: 2px solid #28a745; cursor: crosshair; background: white; display: block; border-radius: 4px;"></canvas>
-                    <div style="display: flex; gap: 10px;">
-                        <button type="button" id="clearCompanySignature" style="padding: 8px 12px; background: #f0f0f0; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">Clear Signature</button>
-                        <span id="companySignatureStatus" style="color: #999; font-size: 0.9rem;"></span>
-                    </div>
-                    <input type="hidden" name="signature_data" id="companySignatureData" value="">
+        <article class="surface surface-pad">
+            <div class="final-section-head">
+                <div>
+                    <small>final actions</small>
+                    <h2><?= $isFinal ? 'Final Contract Packet' : 'Next Execution Step' ?></h2>
                 </div>
-                
-                <button type="submit" style="padding: 12px; background: #28a745; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">
-                    Sign & Apply Seal
-                </button>
-                <span id="companySignMessage" style="color: #666; font-size: 0.9rem;"></span>
-            </form>
-        </div>
-
-        <div class="surface surface-pad">
-            <h2>Allowed actions</h2>
-            <ul class="check-list">
-                <li>Company representative signs when the contract is awaiting company action.</li>
-                <li>Company seal and approval stamp are applied to the execution copy.</li>
-                <li>Final distribution starts only after the contract is fully signed.</li>
-            </ul>
-        </div>
-        <div class="surface surface-pad">
-            <h2>Execution links</h2>
-            <div class="form-actions">
-                <a class="button ghost" href="<?= BASE_URL ?>/contracts/final-pdf/<?= $contractId ?>">Preview PDF</a>
-                <a class="button" href="<?= BASE_URL ?>/contracts/<?= $contractId ?>/editor#distribution">Distribution</a>
             </div>
-        </div>
-    </div>
+            <div class="final-actions">
+                <?php if ($sealedUrl): ?>
+                    <a class="button success" href="<?= ui_e($sealedUrl) ?>" target="_blank" rel="noopener"><?= ui_icon('patch-check') ?> Open Sealed Copy</a>
+                <?php endif; ?>
+                <a class="button ghost" href="<?= ui_e($finalPdfUrl) ?>" target="_blank" rel="noopener"><?= ui_icon('file-earmark-pdf') ?> Open Generated PDF</a>
+                <?php if ($isAwaitingCompany): ?>
+                    <a class="button success" href="<?= ui_e($companySignUrl) ?>"><?= ui_icon('building-check') ?> Company Sign & Seal</a>
+                <?php endif; ?>
+                <?php if ($isFinal): ?>
+                    <a class="button" href="<?= ui_e($distributionUrl) ?>"><?= ui_icon('send-check') ?> Open Distribution</a>
+                <?php endif; ?>
+                <a class="button ghost" href="<?= ui_e($auditUrl) ?>"><?= ui_icon('clipboard-check') ?> Audit Trail</a>
+            </div>
+        </article>
+    </aside>
 </section>
 <?php
 $content = ob_get_clean();
 require dirname(__DIR__) . '/layouts/app.php';
 ?>
-
-<script>
-// Company signature pad setup
-const companyCanvas = document.getElementById('companySignaturePad');
-const companyCtx = companyCanvas.getContext('2d');
-const companyClearBtn = document.getElementById('clearCompanySignature');
-const companyStatus = document.getElementById('companySignatureStatus');
-const companySignatureData = document.getElementById('companySignatureData');
-
-let companyIsDrawing = false;
-let companyHasSignature = false;
-
-// Resize canvas
-function resizeCompanyCanvas() {
-    const rect = companyCanvas.getBoundingClientRect();
-    companyCanvas.width = rect.width;
-    companyCanvas.height = rect.height;
-}
-
-resizeCompanyCanvas();
-window.addEventListener('resize', resizeCompanyCanvas);
-
-// Drawing functions
-function startCompanyDrawing(e) {
-    companyIsDrawing = true;
-    const rect = companyCanvas.getBoundingClientRect();
-    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
-    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
-    companyCtx.beginPath();
-    companyCtx.moveTo(x, y);
-}
-
-function drawCompany(e) {
-    if (!companyIsDrawing) return;
-    const rect = companyCanvas.getBoundingClientRect();
-    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
-    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
-    companyCtx.lineWidth = 2;
-    companyCtx.lineCap = 'round';
-    companyCtx.lineJoin = 'round';
-    companyCtx.strokeStyle = '#000';
-    companyCtx.lineTo(x, y);
-    companyCtx.stroke();
-    companyHasSignature = true;
-    companyStatus.textContent = '✓ Signature captured';
-}
-
-function stopCompanyDrawing() {
-    companyIsDrawing = false;
-    companyCtx.closePath();
-}
-
-// Mouse events
-companyCanvas.addEventListener('mousedown', startCompanyDrawing);
-companyCanvas.addEventListener('mousemove', drawCompany);
-companyCanvas.addEventListener('mouseup', stopCompanyDrawing);
-companyCanvas.addEventListener('mouseout', stopCompanyDrawing);
-
-// Touch events
-companyCanvas.addEventListener('touchstart', (e) => { e.preventDefault(); startCompanyDrawing(e); }, false);
-companyCanvas.addEventListener('touchmove', (e) => { e.preventDefault(); drawCompany(e); }, false);
-companyCanvas.addEventListener('touchend', (e) => { e.preventDefault(); stopCompanyDrawing(); }, false);
-
-// Clear button
-companyClearBtn.addEventListener('click', function() {
-    companyCtx.clearRect(0, 0, companyCanvas.width, companyCanvas.height);
-    companyHasSignature = false;
-    companyStatus.textContent = '';
-    companySignatureData.value = '';
-});
-
-// Form submission
-document.getElementById('companySignForm')?.addEventListener('submit', async function(e) {
-    e.preventDefault();
-    const msg = document.getElementById('companySignMessage');
-    
-    // Capture signature as base64
-    if (companyHasSignature) {
-        companySignatureData.value = companyCanvas.toDataURL('image/png');
-    }
-    
-    msg.textContent = 'Signing and applying seal...';
-    
-    try {
-        const response = await fetch(this.action, {
-            method: 'POST',
-            body: new FormData(this),
-            headers: { Accept: 'application/json' }
-        });
-        const result = await response.json();
-        
-        if (!response.ok || !result.success) {
-            throw new Error(result.error || 'Signing failed');
-        }
-        
-        msg.textContent = '✓ Signed successfully! Refreshing page...';
-        setTimeout(() => location.reload(), 1500);
-    } catch(err) {
-        msg.textContent = '✗ ' + (err.message || 'Error signing');
-    }
-});
-</script>
