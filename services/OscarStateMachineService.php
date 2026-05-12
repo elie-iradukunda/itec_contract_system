@@ -156,7 +156,7 @@ class OscarStateMachineService
         return;
     }
     
-    $baseUrl = $this->absoluteBaseUrl();
+    $baseUrl = "http://" . ($_SERVER['HTTP_HOST'] ?? 'localhost') . "/".BASE_URL;
     $companyEmail = getenv('SMTP_FROM_EMAIL') ?: 'company@itec.com';
     $clientEmail = $additionalData['client_email'] ?? $this->getClientEmail();
     
@@ -310,15 +310,8 @@ private function sendContractFullyExecutedEmail($contract, $clientEmail, $baseUr
     return [
         'token' => $token,
         'expires_at' => $expiresAt,
-        'sign_url' => "{$protocol}://{$host}" . (defined('BASE_URL') ? BASE_URL : '/itec_contract_system') . "/access/{$token}"
+        'sign_url' => "{$protocol}://{$host}/itec_contract_system/access/{$token}"
     ];
-}
-
-private function absoluteBaseUrl()
-{
-    $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
-    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-    return "{$protocol}://{$host}" . (defined('BASE_URL') ? BASE_URL : '/itec_contract_system');
 }
 
     private function triggerStampPipeline($additionalData = [])

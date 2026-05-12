@@ -695,29 +695,56 @@ public function apiStore()
     }
     
     try {
-        $createdBy = $this->resolveCreatedBy($input['created_by'] ?? $_POST['created_by'] ?? null);
-        $documentType = $input['document_type'] ?? $input['type'] ?? 'Service Agreement';
-        $clientName = trim($input['client_name'] ?? $_POST['client_name'] ?? '') ?: null;
-        $clientEmail = trim($input['client_email'] ?? $_POST['client_email'] ?? '') ?: null;
-
-        // Insert into database first to get contract ID.
-        $sql = "INSERT INTO contracts (client_id, client_name, client_email, title, document_type, description, signing_state, created_by) 
-                VALUES (:client_id, :client_name, :client_email, :title, :document_type, :description, 'DRAFT', :created_by)";
+        // Insert into database first to get contract ID
+        $sql = "INSERT INTO contracts (client_name, client_email, title, description, signing_state, created_by) 
+                VALUES (:client_name, :client_email, :title, :description, 'DRAFT', :created_by)";
         
         $stmt = $this->db->prepare($sql);
         $stmt->execute([
-            'client_id' => 1,
             'client_name' => $clientName,
             'client_email' => $clientEmail,
             'title' => $title,
-            'document_type' => $documentType,
             'description' => $input['description'] ?? null,
-            'created_by' => $createdBy
+            'created_by' => $input['created_by'] ?? $_POST['created_by'] ?? 'api_user'
         ]);
         
         $contractId = $this->db->lastInsertId();
-        $saveResult = $this->contractService->saveEditorContent((int) $contractId, $input['content'] ?? '<p></p>', $createdBy);
-        $filePath = $saveResult['file_path'] ?? null;
+        
+        // Generate document using DocumentGeneratorService
+        $docGenerator = new \Services\DocumentGeneratorService();
+        $filePath = $docGenerator->generateContract($contractId, [
+            'title' => $title,
+            'client_name' => $clientName,
+            'client_email' => $clientEmail,
+            'content' => $input['content'] ?? null,
+            'sections' => $input['sections'] ?? null,
+            'services' => $input['services'] ?? null,
+            'amount' => $input['amount'] ?? null,
+            'payment_terms' => $input['payment_terms'] ?? null,
+            'start_date' => $input['start_date'] ?? null,
+            'duration' => $input['duration'] ?? null,
+            'termination' => $input['termination'] ?? null,
+            'governing_law' => $input['governing_law'] ?? 'Rwanda',
+            'effective_date' => $input['effective_date'] ?? null
+        ]);
+        
+        // Update contract with file path
+        $updateSql = "UPDATE contracts SET file_path = :file_path WHERE id = :id";
+        $updateStmt = $this->db->prepare($updateSql);
+        $updateStmt->execute([
+            'file_path' => $filePath,
+            'id' => $contractId
+        ]);
+        
+        // Create initial version in doc_versions
+        $versionSql = "INSERT INTO doc_versions (contract_id, version_no, saved_by, file_path, saved_at) 
+                       VALUES (:contract_id, 1, :saved_by, :file_path, NOW())";
+        $versionStmt = $this->db->prepare($versionSql);
+        $versionStmt->execute([
+            'contract_id' => $contractId,
+            'saved_by' => $input['created_by'] ?? 'system',
+            'file_path' => $filePath
+        ]);
         
         $this->json([
             'success' => true,
@@ -734,12 +761,12 @@ public function apiStore()
             ]
         ]);
         
-    } catch (\PDOException $e) {
+    } catch (PDOException $e) {
         $this->json([
             'success' => false, 
             'error' => 'Database error: ' . $e->getMessage()
         ], 500);
-    } catch (\Throwable $e) {
+    } catch (Exception $e) {
         $this->json([
             'success' => false, 
             'error' => 'Error: ' . $e->getMessage()
@@ -930,10 +957,6 @@ private function convertToPdf($inputPath)
             return $inputPath;
         }
 
-        if (!class_exists('\ZipArchive')) {
-            throw new Exception('Zip extension is not enabled.');
-        }
-
         if (!file_exists($inputPath)) {
             throw new Exception('File not found.');
         }
@@ -942,58 +965,79 @@ private function convertToPdf($inputPath)
             throw new Exception('File is empty.');
         }
 
-        // Validate DOCX structure
-        $zip = new ZipArchive();
-        $openResult = $zip->open($inputPath);
-        if ($openResult !== true) {
-            throw new Exception('Invalid DOCX. Zip open failed with code: ' . $openResult);
-        }
-        if ($zip->locateName('_rels/.rels') === false) {
-            $zip->close();
-            throw new Exception('Invalid DOCX structure.');
-        }
-        $zip->close();
-
-        // Configure PDF Settings
-        \PhpOffice\PhpWord\Settings::setPdfRendererName(\PhpOffice\PhpWord\Settings::PDF_RENDERER_DOMPDF);
-        \PhpOffice\PhpWord\Settings::setPdfRendererPath(realpath(__DIR__ . '/../vendor/dompdf/dompdf'));
-
-        // Load the Word Document
-        $phpWord = \PhpOffice\PhpWord\IOFactory::load($inputPath);
-
-        $tempPdfPath = dirname($inputPath) . 
-                       DIRECTORY_SEPARATOR . 
-                       'tmp_' . 
-                       uniqid() . 
-                       '.pdf';
-
-        $writer = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'PDF');
-
-        /** 
-         * Logic Fix: Access the underlying Dompdf instance to enable 
-         * image loading and remote assets which are often required for logos.
-         */
-        if (method_exists($writer, 'getDompdf')) {
-            $dompdf = $writer->getDompdf();
-            $options = $dompdf->getOptions();
-            $options->set('isRemoteEnabled', true);
-            $options->set('isHtml5ParserEnabled', true);
-            $dompdf->setOptions($options);
+        // Locate LibreOffice on Windows
+        $libreOfficeBin = $this->findLibreOfficeBinary();
+        if ($libreOfficeBin === null) {
+            throw new Exception('LibreOffice is not installed or could not be found.');
         }
 
-        $writer->save($tempPdfPath);
+        $outputDir   = dirname($inputPath);
+        $baseName    = pathinfo($inputPath, PATHINFO_FILENAME);
+        $expectedPdf = $outputDir . DIRECTORY_SEPARATOR . $baseName . '.pdf';
 
-        if (!file_exists($tempPdfPath)) {
-            throw new Exception('PDF conversion failed.');
+        // Remove any leftover PDF with the same base name before converting
+        if (file_exists($expectedPdf)) {
+            unlink($expectedPdf);
         }
+
+        $escapedBin    = escapeshellarg($libreOfficeBin);
+        $escapedInput  = escapeshellarg($inputPath);
+        $escapedOutDir = escapeshellarg($outputDir);
+
+        $command = sprintf(
+            '%s --headless --convert-to pdf --outdir %s %s 2>&1',
+            $escapedBin,
+            $escapedOutDir,
+            $escapedInput
+        );
+
+        exec($command, $output, $exitCode);
+
+        if ($exitCode !== 0) {
+            throw new Exception(
+                'LibreOffice conversion failed (exit ' . $exitCode . '): ' . implode(' ', $output)
+            );
+        }
+
+        if (!file_exists($expectedPdf)) {
+            throw new Exception('PDF conversion failed: output file not found after LibreOffice run.');
+        }
+
+        // Rename to a unique name to avoid collisions with concurrent requests
+        $tempPdfPath = $outputDir . DIRECTORY_SEPARATOR . 'tmp_' . uniqid() . '.pdf';
+        rename($expectedPdf, $tempPdfPath);
 
         return $tempPdfPath;
 
     } catch (\Throwable $e) {
-        // Log error instead of just echoing in a private method context
         error_log('Conversion Error: ' . $e->getMessage());
         return false;
     }
+}
+
+private function findLibreOfficeBinary(): ?string
+{
+    // Common installation paths on Windows
+    $candidates = [
+        'C:\\Program Files\\LibreOffice\\program\\soffice.exe',
+        'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe',
+        'C:\\Program Files\\LibreOffice 7\\program\\soffice.exe',
+        'C:\\Program Files\\LibreOffice 6\\program\\soffice.exe',
+    ];
+
+    foreach ($candidates as $path) {
+        if (file_exists($path)) {
+            return $path;
+        }
+    }
+
+    // Fall back to checking if it's on PATH (e.g. manually added by user)
+    exec('where soffice 2>&1', $out, $code);
+    if ($code === 0 && !empty($out[0])) {
+        return trim($out[0]);
+    }
+
+    return null;
 }
     
 
