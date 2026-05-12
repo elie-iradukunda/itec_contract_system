@@ -6,55 +6,58 @@ $title = 'Upload Signed Copy';
 $activeNav = 'contracts';
 $headerMeta = 'hard copy workflow';
 $pageTitle = 'Upload Signed Copy';
-$pageHeading = 'Upload Returned Hard Copy';
-$pageEyebrow = 'staff hard copy workflow';
-$pageLead = 'Upload the returned signed scan so the contract can move to company execution.';
+$pageHeading = 'Upload Signed Hard Copy';
+$pageEyebrow = 'client signing step';
+$pageLead = 'After printing and signing the contract physically, upload a clear scan or photo here so the contract can move to company execution.';
 $pageActions = [
-    '<a class="button ghost" href="' . BASE_URL . '/contracts/' . $contractId . '/editor#signing">Back to Contract</a>',
+    '<a class="button ghost" href="' . BASE_URL . '/sign/' . $contractId . '">Back to Signing Options</a>',
+    '<a class="button" href="' . BASE_URL . '/contracts/' . $contractId . '/print-pdf" target="_blank" rel="noopener">Download PDF Again</a>',
 ];
 
 ob_start();
 ?>
+<section class="signing-stage surface">
+    <div class="signing-stage-copy">
+        <p>step 2 of 3</p>
+        <h2>Upload the signed copy</h2>
+        <span>Use this page only after you have printed the contract and signed it physically. Once uploaded, the company team will continue the final countersign and seal process.</span>
+    </div>
+    <div class="signing-stage-state">
+        <strong>After upload</strong>
+        <span>Company review + seal</span>
+    </div>
+</section>
+
 <section class="content-split">
     <form class="surface form-surface form-grid" action="<?= BASE_URL ?>/contracts/<?= $contractId ?>/upload-signed-copy" method="post" enctype="multipart/form-data">
-        <!-- Feature E4: upload attaches the returned scan and advances the contract to company action. -->
         <label class="field-span">
-            <span>Signed scan</span>
+            <span>Signed scan or photo</span>
             <input type="file" name="signed_copy" accept=".pdf,.png,.jpg,.jpeg" required>
         </label>
-        <label>
-            <span>Received date</span>
-            <input type="date" name="received_at" value="<?= date('Y-m-d') ?>">
-        </label>
-        <label>
-            <span>Checked by</span>
-            <input type="text" name="checked_by" value="Staff reviewer">
-        </label>
         <label class="field-span">
-            <span>Verification notes</span>
-            <textarea name="notes" placeholder="Confirm signature clarity, page count, and attachment quality."></textarea>
+            <span>Optional note</span>
+            <textarea name="notes" placeholder="Add a note only if something about the scan needs explanation."></textarea>
         </label>
         <div class="field-span form-actions">
-            <a class="button ghost" href="<?= BASE_URL ?>/contracts/<?= $contractId ?>/print-pdf" target="_blank" rel="noopener">Open print PDF</a>
-            <button class="button" type="submit">Attach Signed Copy</button>
+            <button class="button" type="submit">Upload Signed Copy</button>
         </div>
     </form>
 
     <div class="page-stack">
         <div class="surface surface-pad">
-            <h2>Attachment checklist</h2>
+            <h2>Before you upload</h2>
             <ul class="check-list">
-                <li>Every page is legible and in the correct order.</li>
-                <li>The signed page matches the final reviewed version.</li>
-                <li>The file belongs to contract #<?= $contractId ?>.</li>
+                <li>The signature is clearly visible.</li>
+                <li>All pages are included and readable.</li>
+                <li>The scan or photo matches this contract copy.</li>
             </ul>
         </div>
         <div class="surface surface-pad">
-            <h2>After upload</h2>
+            <h2>What happens next</h2>
             <ul class="bullet-list">
-                <li>Client obligation is marked fulfilled.</li>
-                <li>The body remains frozen.</li>
-                <li>The company proceeds with internal signature and seal.</li>
+                <li>Your uploaded signed copy is attached to the contract record.</li>
+                <li>The client signing step is marked complete.</li>
+                <li>The company team continues with countersignature and seal.</li>
             </ul>
         </div>
     </div>

@@ -8,6 +8,11 @@ use Services\OscarStateMachineService;
 
 class UploadController extends Controller
 {
+    public function uploadPage($contractId)
+    {
+        $this->uploadHardCopyPage($contractId);
+    }
+
     public function uploadHardCopyPage($contractId)
     {
         $this->view('contracts/upload-signed-copy', ['contract_id' => (int) $contractId, 'title' => 'Upload Signed Copy']);
@@ -90,7 +95,17 @@ class UploadController extends Controller
             $this->json($payload, $status);
         }
 
-        $target = $contractId ? BASE_URL . '/contracts/' . (int) $contractId . '/editor#signing' : BASE_URL . '/contracts';
+        if (session_status() === PHP_SESSION_NONE) {
+            @session_start();
+        }
+
+        $isClientSigningSession = isset($_SESSION['signing_authorized'])
+            && $_SESSION['signing_authorized'] === true
+            && (int) ($_SESSION['signing_contract_id'] ?? 0) === (int) $contractId;
+
+        $target = $isClientSigningSession
+            ? BASE_URL . '/sign/' . (int) $contractId . '?signed=hard_copy'
+            : ($contractId ? BASE_URL . '/contracts/' . (int) $contractId . '/editor#signing' : BASE_URL . '/contracts');
         header('Location: ' . $target);
         exit;
     }

@@ -36,6 +36,7 @@
     const expiryLabel = document.getElementById('expiryLabel');
     const finalPdfPreview = document.getElementById('finalPdfPreview');
     const createForm = document.getElementById('contractCreateForm');
+    const clientEmails = document.getElementById('clientEmails');
     let editorInstance = null;
     let currentState = config.signingState || 'DRAFT';
     let isSaving = false;
@@ -386,8 +387,6 @@
             if (config.isNew) {
                 const body = {
                     title: document.getElementById('contractTitle')?.value || 'New Contract',
-                    client_name: document.getElementById('clientName')?.value || 'Demo Client',
-                    client_email: document.getElementById('clientEmail')?.value || 'client@itec.local',
                     document_type: document.getElementById('contractType')?.value || '',
                     description: document.getElementById('contractDescription')?.value || '',
                     content: getEditorData()
@@ -560,14 +559,27 @@
 
     async function submitDraftForSigning() {
         if (!config.submitUrl || !isDraftState(currentState)) return;
+        const emails = (clientEmails?.value || '').trim();
+        if (!emails) {
+            setMessage('Add at least one client recipient email before sending.', 'error');
+            clientEmails?.focus();
+            activatePanel('signing');
+            return;
+        }
+
         setMessage('Submitting draft for client signing...', '');
 
         try {
-            const response = await fetch(config.submitUrl, { method: 'POST', headers: { Accept: 'application/json' } });
+            const response = await fetch(config.submitUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                body: JSON.stringify({ client_emails: emails })
+            });
             const result = await responseJson(response);
             if (!response.ok || result.success === false) throw new Error(result.message || result.error || 'Could not submit contract');
             applySigningState(result.new_state || 'AWAITING_CLIENT');
-            setMessage(result.message || 'Contract submitted for client signing.', 'success');
+            const count = Array.isArray(result.recipients) ? result.recipients.length : 1;
+            setMessage((result.message || 'Contract submitted for client signing.') + ' Sent to ' + count + ' recipient' + (count === 1 ? '.' : 's.'), 'success');
             activatePanel('signing');
         } catch (error) {
             setMessage(error.message || 'Could not submit contract for signing.', 'error');

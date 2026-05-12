@@ -4,6 +4,7 @@ namespace Controllers;
 
 use Core\Controller;
 use Core\Database;
+use Core\Mail;
 use Services\OscarStateMachineService;
 use ZipArchive;
 use Exception;
@@ -197,6 +198,7 @@ public function tokenAccess($token)
     session_start();
     $_SESSION['signing_contract_id'] = $distribution['contract_id'];
     $_SESSION['signing_authorized'] = true;
+    $_SESSION['signing_email'] = $distribution['recipient_email'];
     
     // Update distribution as opened
     if ($distribution['status'] === 'pending') {
@@ -241,6 +243,8 @@ public function signPage($contractId)
     
     $this->view('contracts/sign', [
         'contract' => $contract,
+        'signing_email' => $_SESSION['signing_email'] ?? $contract['client_email'] ?? '',
+        'signed_mode' => $_GET['signed'] ?? null,
         'title' => 'Sign Contract',
         'already_signed' => $alreadySigned
     ]);
@@ -261,9 +265,9 @@ public function completeSigning($contractId)
     {
         $input = json_decode(file_get_contents('php://input'), true) ?: [];
         $signerId = $input['signer_id'] ?? $_POST['signer_id'] ?? 'staff@itec.com';
-        $clientEmail = $input['client_email'] ?? $_POST['client_email'] ?? null;
+        $recipientEmails = $this->parseRecipientEmails($input['client_emails'] ?? $input['client_email'] ?? $_POST['client_emails'] ?? $_POST['client_email'] ?? null);
         
-        $stmt = $this->db->prepare("SELECT id, title, signing_state, client_email FROM contracts WHERE id = ?");
+        $stmt = $this->db->prepare("SELECT id, title, signing_state, client_email, client_name FROM contracts WHERE id = ?");
         $stmt->execute([$id]);
         $contract = $stmt->fetch();
         
@@ -272,8 +276,8 @@ public function completeSigning($contractId)
             return;
         }
 
-        if (!$clientEmail) {
-            $clientEmail = $contract['client_email'] ?? null;
+        if (!$recipientEmails && !empty($contract['client_email'])) {
+            $recipientEmails = $this->parseRecipientEmails($contract['client_email']);
         }
         
         if ($contract['signing_state'] !== 'DRAFT') {
@@ -283,9 +287,29 @@ public function completeSigning($contractId)
             ], 400);
             return;
         }
+
+        if (!$recipientEmails) {
+            $this->json([
+                'success' => false,
+                'error' => 'Add at least one client email before sending the contract.'
+            ], 400);
+            return;
+        }
+
+        $primaryEmail = $recipientEmails[0];
+        $this->rememberPrimaryRecipient((int) $id, $primaryEmail);
         
         $stateMachine = new OscarStateMachineService($id);
-        $result = $stateMachine->submitForSigning($signerId, $clientEmail);
+        $result = $stateMachine->submitForSigning($signerId, $primaryEmail);
+        $result['recipients'] = [$primaryEmail];
+        $result['links'] = [];
+
+        foreach (array_slice($recipientEmails, 1) as $email) {
+            $distribution = $this->createSigningDistribution((int) $id, $email);
+            $this->sendSigningInvitation($contract, $email, $distribution['sign_url']);
+            $result['recipients'][] = $email;
+            $result['links'][] = $distribution;
+        }
         
         $this->json($result);
     }
@@ -618,24 +642,24 @@ public function completeSigning($contractId)
 public function apiStore()
 {
     // Get JSON input
-    $input = json_decode(file_get_contents('php://input'), true);
+    $input = json_decode(file_get_contents('php://input'), true) ?: [];
     
     // Validate required fields
-    $clientName = $input['client_name'] ?? $_POST['client_name'] ?? null;
-    $clientEmail = $input['client_email'] ?? $_POST['client_email'] ?? null;
     $title = $input['title'] ?? $_POST['title'] ?? null;
     
-    if (!$clientName || !$clientEmail || !$title) {
+    if (!$title) {
         $this->json([
             'success' => false, 
-            'error' => 'Missing required fields: client_name, client_email, title'
+            'error' => 'Missing required field: title'
         ], 400);
         return;
     }
     
     try {
-        $clientId = $this->ensureClientForContract($clientName, $clientEmail);
         $createdBy = $this->resolveCreatedBy($input['created_by'] ?? $_POST['created_by'] ?? null);
+        $documentType = $input['document_type'] ?? $input['type'] ?? 'Service Agreement';
+        $clientName = trim($input['client_name'] ?? $_POST['client_name'] ?? '') ?: null;
+        $clientEmail = trim($input['client_email'] ?? $_POST['client_email'] ?? '') ?: null;
 
         // Insert into database first to get contract ID.
         $sql = "INSERT INTO contracts (client_id, client_name, client_email, title, document_type, description, signing_state, created_by) 
@@ -643,53 +667,18 @@ public function apiStore()
         
         $stmt = $this->db->prepare($sql);
         $stmt->execute([
-            'client_id' => $clientId,
+            'client_id' => 1,
             'client_name' => $clientName,
             'client_email' => $clientEmail,
             'title' => $title,
-            'document_type' => $input['document_type'] ?? $input['type'] ?? 'Service Agreement',
+            'document_type' => $documentType,
             'description' => $input['description'] ?? null,
             'created_by' => $createdBy
         ]);
         
         $contractId = $this->db->lastInsertId();
-        
-        // Generate document using DocumentGeneratorService
-        $docGenerator = new \Services\DocumentGeneratorService();
-        $filePath = $docGenerator->generateContract($contractId, [
-            'title' => $title,
-            'client_name' => $clientName,
-            'client_email' => $clientEmail,
-            'content' => $input['content'] ?? null,
-            'sections' => $input['sections'] ?? null,
-            'services' => $input['services'] ?? null,
-            'amount' => $input['amount'] ?? null,
-            'payment_terms' => $input['payment_terms'] ?? null,
-            'start_date' => $input['start_date'] ?? null,
-            'duration' => $input['duration'] ?? null,
-            'termination' => $input['termination'] ?? null,
-            'governing_law' => $input['governing_law'] ?? 'Rwanda',
-            'effective_date' => $input['effective_date'] ?? null
-        ]);
-        
-        
-
-        // Update contract with file path
-        $updateSql = "UPDATE contracts SET file_path = :file_path WHERE id = :id";
-        $updateStmt = $this->db->prepare($updateSql);
-        $updateStmt->execute([
-            'file_path' => $filePath,
-            'id' => $contractId
-        ]);
-        
-        $versionSql = "INSERT INTO doc_versions (contract_id, version_no, saved_by, file_path, saved_at) 
-                       VALUES (:contract_id, 1, :saved_by, :file_path, NOW())";
-        $versionStmt = $this->db->prepare($versionSql);
-        $versionStmt->execute([
-            'contract_id' => $contractId,
-            'saved_by' => $input['created_by'] ?? 'system',
-            'file_path' => $filePath
-        ]);
+        $saveResult = $this->contractService->saveEditorContent((int) $contractId, $input['content'] ?? '<p></p>', $createdBy);
+        $filePath = $saveResult['file_path'] ?? null;
         
         $this->json([
             'success' => true,
@@ -701,7 +690,7 @@ public function apiStore()
                 'client_name' => $clientName,
                 'client_email' => $clientEmail,
                 'signing_state' => 'DRAFT',
-                'file_path' => $filePath,
+                'file_path' => $this->relativeProjectPath($filePath),
                 'created_at' => date('Y-m-d H:i:s')
             ]
         ]);
@@ -718,6 +707,91 @@ public function apiStore()
         ], 500);
     }
 }
+
+    private function parseRecipientEmails($value)
+    {
+        if (is_array($value)) {
+            $items = $value;
+        } else {
+            $items = preg_split('/[\s,;]+/', (string) $value, -1, PREG_SPLIT_NO_EMPTY);
+        }
+
+        $emails = [];
+        foreach ($items as $item) {
+            $email = trim((string) $item);
+            if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $emails[strtolower($email)] = $email;
+            }
+        }
+
+        return array_values($emails);
+    }
+
+    private function rememberPrimaryRecipient($contractId, $email)
+    {
+        $stmt = $this->db->prepare("
+            UPDATE contracts
+            SET client_email = COALESCE(NULLIF(client_email, ''), ?),
+                client_name = COALESCE(NULLIF(client_name, ''), ?),
+                updated_at = NOW()
+            WHERE id = ?
+        ");
+        $stmt->execute([$email, $this->displayNameFromEmail($email), $contractId]);
+    }
+
+    private function createSigningDistribution($contractId, $email)
+    {
+        $expiresAt = date('Y-m-d H:i:s', strtotime('+30 days'));
+        $secret = getenv('APP_SECRET') ?: 'itec_contract_secret_key';
+        $token = hash('sha256', $contractId . $email . $secret . $expiresAt . bin2hex(random_bytes(12)));
+
+        $stmt = $this->db->prepare("
+            INSERT INTO doc_distributions (contract_id, recipient_email, token, expires_at, status, created_at)
+            VALUES (?, ?, ?, ?, 'pending', NOW())
+        ");
+        $stmt->execute([$contractId, $email, $token, $expiresAt]);
+
+        return [
+            'email' => $email,
+            'token' => $token,
+            'expires_at' => $expiresAt,
+            'sign_url' => $this->absoluteBaseUrl() . '/access/' . $token,
+        ];
+    }
+
+    private function sendSigningInvitation(array $contract, $email, $signUrl)
+    {
+        $title = htmlspecialchars($contract['title'] ?? 'Contract', ENT_QUOTES, 'UTF-8');
+        $safeUrl = htmlspecialchars($signUrl, ENT_QUOTES, 'UTF-8');
+        $body = "<html><body>
+            <h2>Contract Ready for Signature</h2>
+            <p>Contract <strong>{$title}</strong> is ready for your review and signature.</p>
+            <p><a href='{$safeUrl}'>Open and sign contract</a></p>
+            <p>You can choose digital signing or hard-copy signing on the secure page.</p>
+            </body></html>";
+
+        (new Mail())->send($email, "Verify and Sign Contract - {$contract['title']}", $body);
+    }
+
+    private function displayNameFromEmail($email)
+    {
+        $local = strstr($email, '@', true) ?: $email;
+        return ucwords(str_replace(['.', '_', '-'], ' ', $local));
+    }
+
+    private function absoluteBaseUrl()
+    {
+        $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        return $protocol . '://' . $host . BASE_URL;
+    }
+
+    private function relativeProjectPath($path)
+    {
+        $root = str_replace('\\', '/', dirname(__DIR__)) . '/';
+        $normalized = str_replace('\\', '/', realpath((string) $path) ?: (string) $path);
+        return str_starts_with($normalized, $root) ? substr($normalized, strlen($root)) : $normalized;
+    }
 
     private function ensureClientForContract($clientName, $clientEmail)
     {
@@ -987,7 +1061,7 @@ private function convertToPdf($inputPath)
         return;
     }
     
-    $filePath = __DIR__.$contract['file_path'];
+    $filePath = $this->resolveContractPath($contract['file_path'] ?? '');
     
     if (!file_exists($filePath)) {
         http_response_code(404);
@@ -1022,6 +1096,18 @@ private function convertToPdf($inputPath)
     
     // Clean up temp file
     unlink($result);
+}
+
+private function resolveContractPath($path)
+{
+    $path = str_replace('\\', '/', (string) $path);
+    if ($path === '') {
+        return '';
+    }
+
+    return preg_match('/^[A-Za-z]:\//', $path) || str_starts_with($path, '/')
+        ? $path
+        : dirname(__DIR__) . '/' . ltrim($path, '/');
 }
 
 }
