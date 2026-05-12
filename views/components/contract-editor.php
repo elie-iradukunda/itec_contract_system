@@ -197,7 +197,7 @@ $jsConfig = [
             </small>
         </div>
 
-        <div class="">
+        <div >
             <!-- Submit for Signing (only in DRAFT) -->
             <?php if ($state === 'DRAFT'): ?>
                 <button id="submitForSigning" class="primary-action" type="button" <?= $isNew ? 'disabled' : '' ?>>
@@ -206,10 +206,13 @@ $jsConfig = [
             <?php endif; ?>
 
             <!-- Apply Company Seal (only in AWAITING_COMPANY) -->
+              <!-- Apply Company Seal (only in AWAITING_COMPANY) -->
             <?php if ($state === 'AWAITING_COMPANY'): ?>
-                <a href="<?= BASE_URL ?>/contracts/<?= $contractId ?>/company-seal"  class="btn btn-primary">
-                    <i class="fas fa-stamp"></i> Apply Company Seal
-                </a>
+                 <form method="POST" action="<?= BASE_URL ?>/contracts/<?= $contractId ?>/company-seal">
+                    <button type="submit" class="btn btn-primary">
+                        Apply Company Seal
+                    </button>
+                </form>
             <?php endif; ?>
 
             <!-- Client Signing Choice (only in AWAITING_CLIENT) -->
